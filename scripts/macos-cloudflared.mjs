@@ -1,11 +1,10 @@
 import { appendFile, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { run } from './build-utils.mjs';
+import { isNativeMacosHost, run } from './build-utils.mjs';
 import release from './release-profile.mjs';
 
 if (process.platform !== 'darwin') throw new Error('Build cloudflared on a native macOS runner');
-const hardware = (await run('/usr/sbin/sysctl', ['-n', 'hw.optional.arm64'], { capture: true })).stdout.trim();
-if ((hardware === '1') !== (process.arch === 'arm64')) throw new Error('Translated macOS builds are not native acceptance');
+if (!isNativeMacosHost()) throw new Error('Translated macOS builds are not native acceptance');
 const actualGo = (await run('go', ['version'], { capture: true })).stdout;
 if (!actualGo.includes(`go${release.cloudflaredGoVersion} `)) throw new Error('Go version differs from the release pin');
 const source = resolve('build/cloudflared-source');

@@ -1,9 +1,9 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import release, { verifyProfileBinding } from './release-profile.mjs';
-import { run, sha256File, sourceIdentity } from './build-utils.mjs';
+import { isNativeMacosHost, run, sha256File, sourceIdentity } from './build-utils.mjs';
 import { UPGRADE_BASELINES } from './upgrade-baselines.mjs';
 
 const { values } = parseArgs({ options: {
@@ -27,12 +27,6 @@ const disposableMacos = process.env.CI === 'true' && (process.env.CM_BUILD_ID ||
 if (systemMacosInstaller && (process.platform !== 'darwin' || !disposableMacos)) {
   throw new Error('System macOS acceptance is reserved for a disposable Codemagic or GitHub macOS runner');
 }
-const armHardware = process.platform === 'darwin'
-  ? spawnSync('/usr/sbin/sysctl', ['-n', 'hw.optional.arm64'], { encoding: 'utf8' }).stdout?.trim() : null;
-const nativeArchitecture = process.platform !== 'darwin' ||
-  (armHardware === '1' && process.arch === 'arm64') ||
-  (armHardware !== '1' && process.arch === 'x64' && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ARCH === 'X64');
-
 function runNode(script, args = []) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(process.execPath, [script, ...args], { stdio: 'inherit', windowsHide: true, env: process.env });
@@ -48,6 +42,7 @@ const directory = resolve('release', 'offline', release.version, target);
 const output = resolve(values.output ?? join(directory, 'acceptance.json'));
 // A failed rerun must not leave a previous green report eligible for publishing.
 await rm(output, { force: true });
+const nativeArchitecture = process.platform !== 'darwin' || isNativeMacosHost();
 await runNode('scripts/verify-release.mjs', ['--target', target]);
 const manifest = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'));
 const app = manifest.components.find(component => component.name === 'app');

@@ -18,3 +18,4 @@ updates:
         dependency-type: development
 # Runtime version upgrades are deliberate compatibility work, never auto-merge.
 # Public standard-runner CI is enabled. Every update still needs reviewed PR checks.
+# engines permits the updater's npm patch; packageManager still pins release CI exactly.

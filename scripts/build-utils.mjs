@@ -10,6 +10,16 @@ export async function sha256File(path) {
   return hash.digest('hex');
 }
 
+export function isNativeMacosHost(architecture = process.arch, execute = execFileSync) {
+  const options = { encoding: 'utf8', timeout: 10000 };
+  const machine = execute('/usr/bin/uname', ['-m'], options).trim();
+  // Intel does not expose hw.optional.arm64. Ignore only an absent optional
+  // translation key; command failures and unexpected values must still fail.
+  const translated = execute('/usr/sbin/sysctl', ['-in', 'sysctl.proc_translated'], options).trim();
+  return ['', '0'].includes(translated) &&
+    ({ arm64: 'arm64', x64: 'x86_64' })[architecture] === machine;
+}
+
 export function sourceIdentity(cwd = process.cwd()) {
   const options = { cwd, encoding: 'utf8', windowsHide: true, timeout: 30000 };
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], options).trim();
