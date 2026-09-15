@@ -34,6 +34,10 @@ const smokeMarker = join(work, '.team-devspace-installer-smoke.json');
 const project = join(work, 'project');
 await secureStateDirectory(work);
 await mkdir(project);
+// Baseline installers retain their historical production update origin. Keep
+// manual cross-version acceptance on the exact candidate bytes, never a live
+// rollout selected by the old tray while this disposable fixture is running.
+await atomicJson(join(home, 'updates', 'settings.json'), { automatic: false });
 let installer = sourceInstaller;
 if (!values.direct) {
   await mkdir(dirname(layout), { recursive: true });
@@ -294,12 +298,14 @@ try {
       assert.equal(await execute(baseline, ['/S', `/D=${install}`]), 0, 'The immutable old installer must really execute');
       const oldActive = await readJson(join(install, 'active.json'));
       assert.equal((await readJson(join(oldActive.path, 'release.config.json'))).version, version);
+      assert.equal((await readJson(join(home, 'updates', 'settings.json'))).automatic, false);
       const upgraded = await installAttempt();
       for (const name of ['deviceId', 'deviceSecret', 'ownerToken', 'accessKey', 'keyId', 'bindingId', 'currentProjectRoot', 'remoteAccess']) {
         assert.equal(upgraded[name], enrolled[name], `Cross-version upgrade must preserve ${name}`);
       }
       assert.equal(enrollmentCalls, callsBefore, 'A cross-version upgrade must not re-enroll');
       const current = await readJson(join(install, 'active.json'));
+      assert.equal((await readJson(join(home, 'updates', 'settings.json'))).automatic, false);
       await run(process.execPath, ['scripts/verify-release.mjs', '--target', 'win32-x64', '--installed', current.path]);
       crossVersionUpgrades.push({ from: version, to: release.version, baselineSha256: UPGRADE_BASELINES[version]['win32-x64'] });
     }
@@ -355,6 +361,7 @@ try {
   assert.equal((await readJson(join(home, 'state.json'))).bindingId, bindingId);
   assert.equal(await exists(project), true);
   successReport = { passed: true, actualInstaller: true, selfContainedInstaller: true,
+    automaticUpdatesDisabledInFixture: true,
     crossVersionUpgrades,
     directFinalInstaller: Boolean(values.direct), credentialFreeInstallAndReinstall: true,
     installSurvivesEnrollmentFailure: true,

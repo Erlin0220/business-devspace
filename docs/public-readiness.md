@@ -37,6 +37,12 @@ test inputs; the protected validation Environment supplies their origin without
 embedding it in the candidate. Enrollment is a local/seeded fixture, never a
 production employee account. No employee machine is an Actions runner.
 
+Historical installers keep their original update origin. The disposable test
+home explicitly disables automatic updates before running old desktop versions,
+so a live rollout cannot replace the candidate behind a manual upgrade test.
+This is a fixture preference, not a change to employee settings or production
+policy, and does not claim to validate automatic-update rollout behavior.
+
 Reports distinguish matching native architecture, actual installer execution,
 cross-version upgrades, repair, failure recovery and cleanup from manual employee
 UI / Gatekeeper / SmartScreen checks. A green build-only job is not acceptance.

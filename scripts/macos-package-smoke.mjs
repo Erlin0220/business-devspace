@@ -158,6 +158,9 @@ try {
     currentProjectRoot: project, remoteAccess: 'suspended',
     ports: { devspace: 47670, bridge: 47770, metrics: 47870 } };
   await stateModule.atomicJson(join(home, 'state.json'), state);
+  // The immutable old packages must not prepare an unrelated live rollout
+  // during this controlled, manual installer transaction test.
+  await stateModule.atomicJson(join(home, 'updates', 'settings.json'), { automatic: false });
   await stateModule.atomicText(join(home, 'tunnel.token'), 'not-a-live-tunnel-credential');
   await stateModule.writeUpstreamConfig(state, home);
   await openAndWait();
@@ -167,6 +170,7 @@ try {
     'currentProjectRoot', 'remoteAccess'];
   const verifyIdentity = async () => {
     const actual = JSON.parse(await readFile(join(home, 'state.json'), 'utf8'));
+    assert.equal(JSON.parse(await readFile(join(home, 'updates', 'settings.json'), 'utf8')).automatic, false);
     for (const key of identityFields) assert.equal(actual[key], state[key], `Upgrade changed ${key}`);
     assert.equal(await readFile(join(project, 'keep.txt'), 'utf8'), 'employee project must survive');
   };

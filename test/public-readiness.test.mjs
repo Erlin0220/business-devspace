@@ -128,3 +128,15 @@ test('baseline configuration fails before downloading when it is a sample or cre
     else process.env.TEAM_DEVSPACE_UPGRADE_BASELINE_ORIGIN = previous;
   }
 });
+
+test('manual desktop upgrade fixtures disable automatic rollout without weakening exact-byte checks', async () => {
+  const windows = await readFile('scripts/installer-smoke.mjs', 'utf8');
+  const macos = await readFile('scripts/macos-package-smoke.mjs', 'utf8');
+  for (const source of [windows, macos]) {
+    assert.match(source, /atomicJson\(join\(home, 'updates', 'settings.json'\), \{ automatic: false \}\)/);
+    assert.ok(source.indexOf("'updates', 'settings.json'" ) < source.indexOf('for (const version of Object.keys(UPGRADE_BASELINES))'));
+    assert.match(source, /scripts\/verify-release.mjs.*--installed/);
+    assert.match(source, /settings.json.*automatic, false/);
+  }
+  assert.ok(windows.indexOf("'updates', 'settings.json'") < windows.indexOf('const pending = await installAttempt()'));
+});
