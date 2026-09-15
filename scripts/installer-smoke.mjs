@@ -285,6 +285,8 @@ try {
   assert.equal(enrolled.deviceId, pending.deviceId, 'Enrollment repair must reuse the pending local identity');
   assert.equal(enrolled.bindingId, bindingId);
   assert.equal(enrollmentCalls, 2);
+  assert.equal((await readJson(join(install, 'active.json'))).path, pendingActive.path,
+    'Enrollment recovery must not reinstall or switch the local application payload');
   if (values.direct) {
     for (const version of Object.keys(UPGRADE_BASELINES)) {
       const baseline = await downloadUpgradeBaseline(version, 'win32-x64');
@@ -304,7 +306,6 @@ try {
   }
   const firstActive = await readJson(join(install, 'active.json'));
   await run(process.execPath, ['scripts/verify-release.mjs', '--target', 'win32-x64', '--installed', firstActive.path]);
-  if (!values.direct) assert.equal(firstActive.path, pendingActive.path, 'Enrollment recovery must not reinstall or switch the local application payload');
   const upstream = await readJson(join(firstActive.path, 'node_modules', '@waishnav', 'devspace', 'package.json'));
   assert.equal(upstream.version, release.devspaceVersion);
   assert.equal(await exists(join(firstActive.path, 'git', 'cmd', 'git.exe')), true);

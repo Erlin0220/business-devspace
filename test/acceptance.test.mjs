@@ -45,7 +45,8 @@ test('a failed acceptance attempt invalidates a previous green report', async t 
   const root = await mkdtemp(join(tmpdir(), 'tds-stale-acceptance-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'scripts'));
-  for (const file of ['platform-acceptance.mjs', 'build-utils.mjs', 'release-profile.mjs']) await cp(join('scripts', file), join(root, 'scripts', file));
+  for (const file of ['platform-acceptance.mjs', 'build-utils.mjs', 'release-profile.mjs', 'upgrade-baselines.mjs']) await cp(join('scripts', file), join(root, 'scripts', file));
+  await copyCatalogContract(root);
   const target = `${process.platform}-${process.arch}`;
   await writeFile(join(root, 'release.config.json'), JSON.stringify({ ...release, version: '1.2.3', distribution: { ...release.distribution, targets: [target] } }));
   await writeFile(join(root, 'scripts/verify-release.mjs'), 'process.exit(7);');

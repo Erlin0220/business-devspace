@@ -139,5 +139,13 @@ const evidence = {
           ? ['Disposable-runner enrollment used a loopback fixture, not an employee account. The final unsigned sample EXE and immutable older installers were executed; employee desktop/UAC/SmartScreen interaction was not verified.']
           : ['Disposable-runner enrollment was seeded, not an employee production account.'],
 };
+if (process.env.GITHUB_ACTIONS === 'true') {
+  const required = ['releaseLayout', 'installerTransaction', 'installedPayload', 'nativeArchitecture',
+    'existingInstallUpgrade', 'finalEntrypointTransaction', 'nativeStartup', 'zeroResidue',
+    ...(desktopTray ? ['trayProtocol', 'traySingleInstance'] : [])];
+  if (sourceDirty !== false || commit !== process.env.GITHUB_SHA || required.some(check => evidence.checks[check] !== true)) {
+    throw new Error('Hosted acceptance requires clean exact-commit source and every applicable native installation gate');
+  }
+}
 await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(JSON.stringify({ acceptance: true, target, output, checks: evidence.checks }));

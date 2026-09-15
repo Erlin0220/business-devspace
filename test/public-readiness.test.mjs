@@ -109,6 +109,9 @@ test('public native CI accepts all four sample installers without exporting bina
   const uploads = [...workflow.matchAll(/^\s+path:\s+(.+)$/gm)].map(match => match[1]);
   assert.equal(uploads.length, 1);
   assert.ok(uploads[0].endsWith('/acceptance.json'), 'Only an allow-listed receipt may leave the disposable runner');
+  const acceptance = await readFile('scripts/platform-acceptance.mjs', 'utf8');
+  assert.match(acceptance, /sourceDirty !== false \|\| commit !== process\.env\.GITHUB_SHA/);
+  assert.match(acceptance, /required\.some\(check => evidence\.checks\[check\] !== true\)/);
 });
 
 test('baseline configuration fails before downloading when it is a sample or credential-bearing origin', async () => {
