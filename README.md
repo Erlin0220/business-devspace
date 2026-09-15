@@ -1,6 +1,6 @@
 # Team DevSpace
 
-公开源码仓库：**Erlin0220/business-devspace**。这是独立的干净源码快照；内部旧仓库历史和二进制发行不迁入。
+公开源码仓库：**Erlin0220/business-devspace**。这是独立的干净源码快照；内部旧仓库历史和二进制发行不迁入。日常开发使用此仓库的 Issue → 分支 → PR → 必需检查 → 合并流程。
 
 让共享的 ChatGPT 工作空间 App 根据每名员工自己的 Access Key，连接到对应电脑上的官方 DevSpace。
 
@@ -51,7 +51,9 @@ npm run deploy -- --dry-run
 
 [原生候选工作流](.github/workflows/build-installers.yml)使用 Windows、Linux、macOS ARM64 和原生 Intel runner；构建手动触发，不因每次 PR 自动消耗四平台打包额度。公开 CI 只构建隔离的示例配置并保留验收报告，不上传安装器、不注入生产配置、不部署或调整版本策略。
 
-**迁移状态：原生 GitHub 四平台工作流尚需实际运行验收。** 现有 Codemagic / 本地构建保留为过渡回退，不代表已经完成替代。构建成功也不等于跨版本安装、员工 UI、Gatekeeper 和真实 ChatGPT 验收成功。见 [公开准备状态](docs/public-readiness.md)。
+四个平台的替代链已在同一提交上完成真实安装与跨版本升级验收，随后移除了 Codemagic、旧 Intel 产物交接与 Rosetta 发布豁免；[验证记录](docs/public-readiness.md#migration-evidence)区分自动化通过项与员工机器上仍需人工验证的项目。
+
+**边界：四平台原生 CI 通过不等于新的生产发行获准。** 员工 UI、Gatekeeper、真实 Enrollment/ChatGPT 和公开二进制合规仍按各自门槛处理；生产服务与现有员工交付链保持不变。见 [公开准备状态](docs/public-readiness.md)。
 
 发行复用原安装器、不可变版本、Ed25519 更新签名和 `stable / auto / minimumSupported / enforceAfter`。正式包必须与验收的提交、发行配置及最终字节一致。不能重建已发布的同一版本，也不能重新生成现有客户端信任的更新密钥。
 

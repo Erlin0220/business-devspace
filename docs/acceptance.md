@@ -4,7 +4,7 @@
 
 单元/边界测试可以证明 D1 的绑定、凭据校验、流量路由和错误处理。原生启动测试可以证明本机运行和停止没有残留。**它们不能代替真实 Cloudflare Tunnel、真实 ChatGPT 工作空间以及另一台 Mac 的验证。**
 
-正式发布必须覆盖 Windows、Linux 和两个 macOS 目标的真实安装器事务与安装后运行验证。darwin-arm64 使用 Apple Silicon；darwin-x64 优先使用 Intel。按当前内部发行决策，在没有 Intel 机器时，允许免费 Codemagic M2 上用 Rosetta 完整安装、升级和运行同一份 x64 PKG，发布验证仍要求所有其余门禁通过，并保留 nativeArchitecture: false 与 Intel 实机未验收的明确限制。这不是物理 Intel 验收，也不能用来宣称最低 macOS 版本、Gatekeeper 或员工交互已验证。安装器不会自动安装 Rosetta，ARM64 包仍不能安装到 Intel；不得修改机器类型或付费套餐来绕过限制。两个 macOS 目标继续共用一个既有 workflow。
+正式发布必须覆盖 Windows、Linux 和两个 macOS 目标的真实安装器事务与安装后运行验证。darwin-arm64 使用 Apple Silicon，darwin-x64 使用原生 Intel runner；不再接受 Rosetta 发布豁免。四个平台共用手动 GitHub Actions 原生矩阵，历史 Rosetta 报告仍只代表当时的受限验证，不能改写成原生 Intel 证据。公开 CI 只构建示例配置并保留报告，GitHub 安装器公开分发还须关闭独立合规门槛。最低系统版本、Gatekeeper 和员工交互不因 CI 通过而自动视为验证完成。
 
 ## 无凭据的本地验证
 
@@ -25,9 +25,11 @@ npm run acceptance:linux:wsl
 
 Windows 的本地 installer transaction 从生产 manifest/bootstrap 源重新编译一个只更换随机注册表和开始菜单键的隔离自包含 NSIS，避免覆盖已安装的员工版本；它验证首次 Enrollment 503、Repair、覆盖升级、credential 恢复、损坏 payload 修复、A/B 版本回收、卸载和零测试 Task 残留。`test:native` 使用真实 Task Scheduler/runtime/MCP，并额外制造同一 `TEAM_DEVSPACE_HOME` 的未知旧 owner task 与另一 state home 的 foreign task：前者必须被迁移，后者必须保留。packaged Tray 会真实启动第二个进程，第二个进程必须在创建图标前被 OS single-instance guard 拒绝。
 
-显式运行 `acceptance:platform` 时仍会在 target 的 offline layout 写入 `acceptance.json`，记录 release、commit、source 是否 dirty、入口文件 SHA-256 和实际运行的检查。Codemagic workflow 在打包和 Mach-O 检查后调用 `scripts/platform-acceptance.mjs --system-macos-installer`，x64 使用 x64 Node/Rosetta 执行相同入口。该选项仅允许非 root 的 Codemagic 临时环境，且遇到既有 App、设备状态、CLI、安装收据或 LaunchAgent 会拒绝覆盖。测试通过系统 `installer -pkg` 安装真实包，再用安装后的 payload 验证原生 Runtime/MCP、LaunchAgent、菜单栏可见性、重复安装、损坏 CLI 修复、暂停与身份保留、卸载及测试文件清理；复用已有测试，不建立第二套运行时。
+显式运行 `acceptance:platform` 时仍会在 target 的 offline layout 写入 `acceptance.json`，记录 release、commit、source 是否 dirty、入口文件 SHA-256 和实际运行的检查。GitHub workflow 在打包和架构检查后调用 `scripts/platform-acceptance.mjs --system-macos-installer`，ARM64/Intel 使用匹配的原生 Node。该选项仅允许非 root 的 GitHub 临时 macOS 环境，遇到既有 App、设备状态、CLI、安装收据或 LaunchAgent 会拒绝覆盖。测试通过系统 `installer -pkg` 安装真实包，再用安装后的 payload 验证原生 Runtime/MCP、LaunchAgent、菜单栏可见性、跨版本升级、重复安装、损坏 CLI 修复、暂停与身份保留、卸载及测试文件清理；不建立第二套运行时。
 
-普通 macOS `acceptance:platform` 仍只解包并测试内部 bootstrap，必须记录 `finalEntrypointTransaction: false`；发布验证拒绝这类证据，也拒绝缺少 `nativeStartup` 的 macOS 证据。配置了工作流不代表已经执行通过，应检查对应构建的 `acceptance.json`。系统安装测试会实际经过 postinstall 自动打开并确认首个原生窗口可见；随后仅在 Codemagic 临时用户内终止这个等待人工 Access Key 的测试进程树，再继续使用隔离的暂停状态验证安装后 Runtime、LaunchAgent、菜单栏、重复安装和修复。它不代替管理员授权弹窗、Gatekeeper、真实首次 Enrollment、员工登录/重启或最低支持系统版本的实机验收。保持 Codemagic Personal 免费 M2，不启用付费订阅、额外机器类型或其他 CI 服务。
+普通 macOS `acceptance:platform` 仍只解包并测试内部 bootstrap，必须记录 `finalEntrypointTransaction: false`；发布验证拒绝这类证据，也拒绝缺少 `nativeStartup` 的 macOS 证据。配置了工作流不代表执行通过，应检查对应构建的 `acceptance.json`。系统安装测试实际确认 postinstall 首个原生窗口可见；随后仅在临时用户内终止等待人工 Access Key 的测试进程树，再以隔离的暂停状态验证后续生命周期。它不代替管理员授权弹窗、Gatekeeper、真实首次 Enrollment、员工登录/重启或最低支持系统版本的实机验收。
+
+Windows 的 GitHub 临时 runner 使用 `--direct-windows-installer` 运行未改写的最终 EXE，并真实安装保留哈希固定的 0.2.3/0.2.4 基线后覆盖升级。桌面手动升级夹具预先关闭自己状态目录里的自动更新，避免历史 updater 把候选替换为生产 rollout；这不是修改员工偏好或生产策略，也不代表自动 rollout 已验收。GitHub 上任何适用门禁为假、源码 dirty 或提交不匹配都会失败，不会留下绿色报告。
 
 三个平台的安装 smoke 都在实际解包后的目录调用现有 `verify-release.mjs --target <target> --installed <path>`：逐字节比对内嵌 manifest，核对关键文件与构建输出的 SHA-256，执行已安装 Node 验证平台/架构/版本，检查 cloudflared 版本和来源哈希、上游 DevSpace 版本及 Unix 可执行权限；macOS 另用系统 lipo 校验安装后的原生二进制架构。只有这些检查执行通过，报告才记录 `installedPayload: true`，缺少该证据的旧报告不再通过发布检查。任何验收重跑先清除上次成功 evidence，失败不留下旧的假绿。
 
@@ -92,4 +94,4 @@ node scripts/acceptance.mjs --device <Windows私有描述文件> --device <Mac�
 
 ## 发布门槛
 
-只有安装、用户身份传递、两设备隔离、权限提示、原生启停/登录恢复、断网恢复、撤销/重置、覆盖升级在上述范围内都有真实证据，才能将 Spec #1 与子任务 #2–#8 标记为整体完成。编译成功、Localhost Mock 成功或“已经写好脚本”都不能关闭还未运行的真实验收项。
+只有安装、用户身份传递、两设备隔离、权限提示、原生启停/登录恢复、断网恢复、撤销/重置、覆盖升级在上述范围内都有真实证据，才能将相应的产品发行验收事项标记为整体完成。不要把旧内部仓库的 Issue 编号当作新仓库事项编号。编译成功、Localhost Mock 成功或“已经写好脚本”都不能关闭还未运行的真实验收项；源码公开迁移也不等于新的员工生产发行获准。

@@ -18,12 +18,20 @@ launcher in PATH. Record actual results and untested platforms in the PR.
 Mocked APIs, extracted packages and emulation are not native installation proof.
 
 `main` is the integration branch, not a daily development workspace. The
-proposed ruleset is `config/main-ruleset.json`: PR required, `verify` and
+active ruleset is represented by `config/main-ruleset.json`: PR required, `verify` and
 `secret-scan` checks required, resolved review threads, linear squash history,
 no force push or deletion. A solo maintainer may merge their own PR after
-reviewing the diff; required approvals are deliberately zero. The JSON file
-does not enforce anything until installed and verified in GitHub. Current
-account/visibility limitations are tracked in `docs/public-readiness.md`.
+reviewing the diff; required approvals are deliberately zero. Enforcement was
+verified with rejected direct/force pushes, branch deletion and a pending-check
+merge. Future policy edits still require live API verification, not just JSON.
+Evidence is tracked in `docs/public-readiness.md` and the cutover Issue.
+
+Preserve a noreply author and committer address. Where GitHub's merge API cannot
+use the maintainer's noreply identity, a checked, single-commit PR can be integrated
+by a protected fast-forward after all required checks and review threads pass.
+Never disable rules or use admin bypass; a PR's `MERGED` label alone is not proof
+that its required checks ran. Account-level web-merge email privacy is separate
+from local Git configuration and must be checked before using that route.
 
 ## CI and release boundaries
 
@@ -33,11 +41,12 @@ a privileged `workflow_run`, or an employee/self-hosted runner. Pin Actions to
 full commit SHAs. A contributor PR modifying CI still requires human inspection
 before running it. Approve external-contributor workflow runs deliberately.
 
-Production candidate builds and deployment are manual, reviewed-main-only
-actions. Environment branch restrictions must also be configured remotely;
-an `if:` expression is not a substitute for protecting the Environment itself.
-Production signing/deployment secrets belong only to their individual steps,
-not dependency installation, unit tests, artifact logs or caches.
+Public native candidates are manual, reviewed-main-only and sample-only. The
+validation Environment is also restricted to main remotely; an `if:` expression
+is not a substitute. It has only a masked, read-only historical-baseline origin,
+not production deployment/signing credentials. Public CI uploads acceptance
+receipts only, never installers. The production deployment workflow remains
+disabled here; independently authorized operator builds and delivery are separate.
 
 A merge does not publish. Preserve the exact accepted bytes, source commit,
 release profile digest, signatures and receipt limitations. Do not overwrite

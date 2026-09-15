@@ -82,20 +82,16 @@ test('the original PolyForm text and upstream licenses remain in the packaging a
   assert.match(await readFile('LICENSES/cloudflared-LICENSE.txt', 'utf8'), /Apache License/);
 });
 
-test('the old Intel handoff remains a protected manual fallback with operator-profile binding', async () => {
-  const workflow = await readFile('.github/workflows/accept-codemagic-intel.yml', 'utf8');
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.doesNotMatch(workflow, /^\s+(?:push|pull_request(?:_target)?|workflow_run):/m);
-  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /environment: production/);
-  assert.match(workflow, /TEAM_DEVSPACE_RELEASE_PROFILE_JSON/);
-  assert.match(workflow, /vars\.TEAM_DEVSPACE_RELEASE_PROFILE \}\}/);
-  assert.match(workflow, /requireProductionProfile\(release\)/);
-  assert.match(workflow, /node scripts\/macos-accept-existing\.mjs/);
-  const script = await readFile('scripts/macos-accept-existing.mjs', 'utf8');
-  assert.match(script, /from '\.\/release-profile\.mjs'/);
-  assert.match(script, /prior\.releaseProfileSha256, releaseProfileDigest\(release\)/);
-  assert.doesNotMatch(script, /from '\.\.\/release\.config\.json'/);
+test('superseded Codemagic and Intel handoff entrypoints stay retired', async () => {
+  for (const path of ['codemagic.yaml', '.github/workflows/accept-codemagic-intel.yml',
+    'scripts/codemagic.mjs', 'scripts/macos-accept-existing.mjs', 'test/codemagic.test.mjs', 'docs/ops/codemagic-api.md']) {
+    await assert.rejects(readFile(path), { code: 'ENOENT' });
+  }
+  const manifest = JSON.parse(await readFile('package.json', 'utf8'));
+  assert.equal(manifest.scripts['macos:ci'], undefined);
+  for (const path of ['scripts/platform-acceptance.mjs', 'scripts/macos-package-smoke.mjs']) {
+    assert.doesNotMatch(await readFile(path, 'utf8'), /CM_BUILD_ID|Codemagic/);
+  }
 });
 
 test('public native CI accepts all four sample installers without exporting binaries or production configuration', async () => {

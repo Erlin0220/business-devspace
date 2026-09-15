@@ -32,15 +32,16 @@ dependencies and final installer. Do not cross-copy PTY/SQLite modules or
 rebuild a different package after acceptance. macOS cloudflared uses the
 existing pinned upstream source/Go inputs on matching hardware.
 
-Sample candidates are labeled `SAMPLE-NOT-FOR-EMPLOYEES`. An operator candidate
-requires reviewed main and a branch-restricted production Environment. Neither
-workflow publishes bytes or changes stable/auto/minimum support automatically.
+Sample candidates are labeled `SAMPLE-NOT-FOR-EMPLOYEES`. Public native CI uses
+only this edition and retains acceptance receipts, never installer bytes or a
+production profile. The validation Environment is main-restricted. Authorized
+operator builds remain separate; no workflow changes stable/auto/minimum support.
 
-The new hosted path is not accepted until actual runs pass. Current billing
-blocks GitHub runners, so the existing local/Codemagic path remains a temporary
-fallback. Historical M2/Rosetta receipts are not native Intel acceptance. Do
-not delete the fallback or its tests until the replacement has equivalent
-final-byte, cross-version, native lifecycle and recovery evidence.
+The complete GitHub native replacement passed one exact-commit cohort before
+Codemagic and external Intel handoff were removed; see [evidence](public-readiness.md#migration-evidence).
+Historical M2/Rosetta receipts remain historical limitations, not native Intel
+acceptance and not an exception available to new publication. Each new candidate
+still needs its own final-byte, cross-version, native lifecycle and recovery proof.
 
 Local validation can keep outputs away from previously accepted artifacts:
 

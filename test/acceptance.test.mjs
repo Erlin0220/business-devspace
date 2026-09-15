@@ -157,8 +157,8 @@ test('strict Windows acceptance rejects isolated-only installer evidence', async
   assert.match((await verify()).stdout, /"accepted":true/);
 });
 
-test('system macOS acceptance refuses a non-Codemagic host before touching installed paths', async () => {
+test('system macOS acceptance refuses a non-GitHub host before touching installed paths', async () => {
   await assert.rejects(exec(process.execPath, [resolve('scripts/macos-package-smoke.mjs')], {
-    timeout: 10000, env: { ...process.env, NODE_OPTIONS: '', CI: '', CM_BUILD_ID: '' },
-  }), error => /requires a disposable, non-root Codemagic/.test(error.stderr));
+    timeout: 10000, env: { ...process.env, NODE_OPTIONS: '', CI: '', GITHUB_ACTIONS: '', RUNNER_OS: '' },
+  }), error => /requires a disposable, non-root GitHub/.test(error.stderr));
 });

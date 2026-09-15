@@ -4,7 +4,8 @@ This is a new, independent source-available repository, created from an audited
 source snapshot. It is not a fork, mirror, visibility change or history rewrite
 of the internal repository. Old Git history, Releases, Actions runs/logs/caches,
 PR metadata, private configuration and raw audit reports are not imported.
-The internal repository remains private and retains its historical evidence.
+The internal repository remains private and retains its historical evidence;
+new development belongs to `Erlin0220/business-devspace`.
 
 ## License and disclosure boundary
 
@@ -63,10 +64,26 @@ already running clients remain outside this cutover.
 
 ## Migration evidence
 
-Public enforcement, ordinary CI and the four native jobs must be recorded from
-actual executions. Until all replacements pass, Codemagic and the old Intel
-handoff remain recoverable fallback paths; do not claim migration from workflow
-configuration alone. The cutover tracking Issue records run and PR evidence.
+The initial complete replacement cohort is
+[run 34988723116](https://github.com/Erlin0220/business-devspace/actions/runs/34988723116)
+at commit `45f9efe297cd7aa43fbcb3c885864d983da5a202`. All four native jobs passed;
+their downloaded receipts have the same commit and sample-profile digest,
+`sourceDirty: false`, matching native architecture, actual final-entrypoint
+transactions, cross-version upgrades and owned-residue cleanup. Windows ran
+the immutable 0.2.3 and 0.2.4 installers rather than rebuilt substitutes.
+
+Only after that evidence was checked were Codemagic's API/workflow/commands,
+the external Intel handoff and the Rosetta publication waiver removed. Regression
+tests reject the retired waiver even when an old caller still supplies it.
+Local build/debug tools, employee opt-in checks, historical baseline hashes and
+the existing operator delivery tooling remain; public CI does not replace the
+separately authorized production distribution process. Old cloud/build history
+is archival evidence, not an active public CI chain.
+
+[Cutover Issue #1](https://github.com/Erlin0220/business-devspace/issues/1)
+records subsequent reviewed changes, final CI/runs and enforcement evidence.
+[Binary gate #2](https://github.com/Erlin0220/business-devspace/issues/2)
+remains independent and open. Receipt-only artifacts do not authorize release.
 
 ## Primary references
 

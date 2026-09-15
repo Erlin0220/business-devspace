@@ -22,10 +22,10 @@ if (employeeWindowsInstaller && (process.platform !== 'win32' || directWindowsIn
 if (directWindowsInstaller && process.platform !== 'win32') throw new Error('Direct final-installer acceptance is Windows-only');
 if (directWindowsInstaller && process.env.CI !== 'true') throw new Error('Direct final-installer acceptance is reserved for an isolated CI runner');
 const systemMacosInstaller = Boolean(values['system-macos-installer']);
-const disposableMacos = process.env.CI === 'true' && (process.env.CM_BUILD_ID ||
-  (process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_OS === 'macOS'));
+const disposableMacos = process.env.CI === 'true' &&
+  process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_OS === 'macOS';
 if (systemMacosInstaller && (process.platform !== 'darwin' || !disposableMacos)) {
-  throw new Error('System macOS acceptance is reserved for a disposable Codemagic or GitHub macOS runner');
+  throw new Error('System macOS acceptance is reserved for a disposable GitHub macOS runner');
 }
 function runNode(script, args = []) {
   return new Promise((resolveRun, reject) => {

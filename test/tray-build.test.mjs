@@ -60,16 +60,15 @@ test('desktop About metadata has one author source and one shared Control Center
 
 test('macOS UI has one AppKit implementation and Windows retains its Rust build', async () => {
   const [builder, workflow, rust, swift, setup] = await Promise.all([
-    readFile('scripts/tray-build.mjs', 'utf8'), readFile('codemagic.yaml', 'utf8'),
+    readFile('scripts/tray-build.mjs', 'utf8'), readFile('.github/workflows/build-installers.yml', 'utf8'),
     readFile('native/tray/src/main.rs', 'utf8'), readFile('native/macos/TeamDevSpaceUI.swift', 'utf8'),
     readFile('client/setup.mjs', 'utf8'),
   ]);
   assert.match(builder, /process\.platform === 'darwin'\) return buildMacUi/);
   assert.match(builder, /'build', '--release', '--locked'/);
-  assert.match(workflow, /architecture:/);
-  assert.match(workflow, /- arm64/);
-  assert.match(workflow, /- x64/);
-  assert.match(workflow, /\/usr\/bin\/arch -x86_64/);
+  assert.match(workflow, /runner: macos-15\s+target: darwin-arm64/);
+  assert.match(workflow, /runner: macos-15-intel\s+target: darwin-x64/);
+  assert.doesNotMatch(workflow, /arch -x86_64|codemagic/i);
   assert.doesNotMatch(workflow, /TEAM_DEVSPACE_TRAY_|tray_fingerprint|rustup/);
   assert.doesNotMatch(rust, /target_os = "macos"/);
   assert.match(swift, /NSStatusBar\.system\.statusItem/);

@@ -12,9 +12,8 @@ import { downloadUpgradeBaseline, UPGRADE_BASELINES } from './upgrade-baselines.
 // This test installs the actual package-owned paths. Never run it on an employee
 // Mac, or disguise a developer workstation as CI to bypass this boundary.
 if (process.platform !== 'darwin' || process.getuid() === 0 ||
-    process.env.CI !== 'true' || !(process.env.CM_BUILD_ID ||
-      (process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_OS === 'macOS'))) {
-  throw new Error('System PKG acceptance requires a disposable, non-root Codemagic or GitHub macOS session');
+    process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_OS !== 'macOS') {
+  throw new Error('System PKG acceptance requires a disposable, non-root GitHub macOS session');
 }
 const app = '/Applications/Team DevSpace.app';
 const command = '/usr/local/bin/team-devspace';
@@ -239,7 +238,7 @@ try {
     repeatInstall: true, damagedCliRepair: true, retainedEnrollmentAndPause: true,
     uninstallPreservesProjects: true, reinstallAfterUninstall: true, damagedClientUninstall: true, screenshots,
     limitations: ['First-run UI visibility and interrupted-setup recovery are tested; Enrollment uses seeded isolated state, not a live employee Access Key.',
-      'Administrator authorization dialogs are not automated because Codemagic uses passwordless sudo.',
+      'Administrator authorization dialogs are not automated because the GitHub-hosted macOS runner uses passwordless sudo.',
       'Unsigned package Gatekeeper approval and real employee login remain manual acceptance.'] }));
 } catch (error) {
   for (const log of [join(home, 'logs/setup.log'), join(home, 'logs/tray.error.log'), '/var/log/team-devspace-install.log']) {

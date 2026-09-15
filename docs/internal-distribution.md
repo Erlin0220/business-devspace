@@ -1,6 +1,6 @@
 # Internal-free software trust
 
-The repository and device-control service remain private, but installer files are intentionally available without download authentication. `internal-free` describes code-signing limitations, not an access-control promise. Fixed software delivery is documented in [one-command-distribution.md](one-command-distribution.md).
+The source repository is Public; operator configuration and employee state remain private, and device access remains authenticated. Existing employee installer files are intentionally available without download authentication. `internal-free` describes code-signing limitations, not an access-control promise. Public GitHub installer distribution is separately blocked by the compliance gate in [public-readiness.md](public-readiness.md). Existing employee delivery is documented in [one-command-distribution.md](one-command-distribution.md).
 
 ## Windows
 
@@ -10,7 +10,7 @@ The stable installation script validates the complete EXE hash and size before e
 
 ## macOS
 
-The two PKGs remain unsigned/unnotarized unless the existing protected Developer ID signing/notarization path is explicitly configured. Codemagic builds each target and runs actual system PKG installation, installed-payload and LaunchAgent checks. The x64 build and runtime tests use Rosetta on Apple Silicon, not physical Intel hardware.
+The two PKGs remain unsigned/unnotarized unless an independently authorized Developer ID signing/notarization path is configured. The GitHub native matrix builds each sample target and runs actual system PKG installation, installed-payload and LaunchAgent checks on matching ARM64 or Intel runners. Rosetta is not accepted as Intel publication evidence.
 
 Normal Gatekeeper and administrator confirmations remain. Where macOS permits it, a user who has verified the source may approve that specific downloaded package in System Settings → Privacy & Security. Never disable Gatekeeper globally or advertise zero-confirmation installation. CI installation does not prove employee-machine Gatekeeper approval or real employee Enrollment.
 
@@ -22,6 +22,6 @@ The stable CLI resolves `active-path`. Upgrades retain identity and pause intent
 
 ## Release policy
 
-One clean source commit and exact final-byte acceptance are required for every platform. Signing, where used, must precede that acceptance. Windows/Linux build on native local hosts; both Mac architectures use the existing manual Codemagic workflow. Software publication uploads all four targets, verifies checksums and public HTTPS reads, then switches one stable pointer. Historical versions cannot be overwritten.
+One clean source commit and exact final-byte acceptance are required for every platform. Signing, where used, must precede that acceptance. The manual GitHub matrix validates all four native sample targets; local tools remain available for debugging and separately authorized operator builds. Authorized employee publication still uses the existing delivery tool, verifies exact bytes and HTTPS reads, then switches a stable pointer deliberately. Historical versions cannot be overwritten, and sample CI does not authorize such publication.
 
-GitHub Releases may remain private backup/archive storage; employees never need a GitHub token. Public Windows signing and Apple Developer ID/notarization remain future trust improvements, not reasons to add R2 authentication or administrator-generated download tickets.
+Old private GitHub Releases remain historical archive storage and are not imported into the Public repository; employees never need a GitHub token. Public installers require the separate redistribution-compliance gate to close. Public Windows signing and Apple Developer ID/notarization remain future trust improvements, not reasons to add R2 authentication or administrator-generated download tickets.

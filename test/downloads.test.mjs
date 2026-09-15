@@ -163,10 +163,11 @@ test('publication requires final installer evidence for exact commit and exact b
   await writeFile(x64Path, JSON.stringify({ ...x64Evidence,
     limitations: ['This process is not verified on matching native CPU architecture; Rosetta is not Intel hardware acceptance.'],
     checks: { ...x64Evidence.checks, nativeArchitecture: false } }));
-  await verifyAcceptance({ ...args, allowRosettaDarwinX64: true });
+  // Historical callers cannot opt back into the retired Rosetta release waiver.
+  await assert.rejects(verifyAcceptance({ ...args, allowRosettaDarwinX64: true }), /not Rosetta-only evidence/);
   await writeFile(x64Path, JSON.stringify({ ...x64Evidence,
     limitations: [], checks: { ...x64Evidence.checks, nativeArchitecture: false } }));
-  await assert.rejects(verifyAcceptance({ ...args, allowRosettaDarwinX64: true }), /must remain explicit/);
+  await assert.rejects(verifyAcceptance({ ...args, allowRosettaDarwinX64: true }), /not Rosetta-only evidence/);
   await writeFile(x64Path, JSON.stringify(x64Evidence));
   await writeFile(join(f.input, 'win32-x64', evidence.entrypoint.name), 'corrupt');
   await assert.rejects(verifyAcceptance(args), /differs from the accepted bytes/);
