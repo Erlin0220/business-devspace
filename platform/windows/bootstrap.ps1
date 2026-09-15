@@ -360,6 +360,25 @@ function Remove-PayloadTree([string]$Path) {
   if (Test-Path -LiteralPath $Path) { throw "Could not remove installed payload: $Path" }
 }
 
+function Initialize-StagingDirectory([string]$Path) {
+  # Another reader can hold a staging directory through an installer boundary.
+  # Keep the short staging path, but never treat cleanup failure as
+  # an empty directory or change permissions to force an upgrade through.
+  $deadline = [DateTime]::UtcNow.AddSeconds(5)
+  do {
+    try {
+      Remove-PayloadTree $Path
+      New-Item -ItemType Directory -Path $Path -ErrorAction Stop | Out-Null
+      return
+    } catch {
+      $cause = $_.Exception.GetBaseException()
+      if (($cause -isnot [IO.IOException] -and $cause -isnot [UnauthorizedAccessException]) -or
+          [DateTime]::UtcNow -ge $deadline) { throw }
+      Start-Sleep -Milliseconds 100
+    }
+  } while ($true)
+}
+
 function Assert-Version([string]$Root, [object]$Manifest) {
   $node = Join-Path $Root 'runtime\node.exe'
   $cloudflared = Join-Path $Root 'bin\cloudflared.exe'
@@ -442,7 +461,7 @@ try {
   if (-not $OfflineRoot -or -not (Test-Path -LiteralPath (Join-Path $OfflineRoot 'objects') -PathType Container)) {
     throw 'The installer embedded payload is unavailable.'
   }
-  New-Item -ItemType Directory -Path $versionsRoot, $stagingRoot -Force | Out-Null
+  New-Item -ItemType Directory -Path $versionsRoot -Force | Out-Null
   $manifestSha = Get-Sha256 $ManifestPath
   $stateFile = Join-Path $stateHome 'state.json'
   $hasEnrollment = $false
@@ -456,8 +475,7 @@ try {
     }
   }
   $stage = $stagingRoot
-  Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
-  New-Item -ItemType Directory -Path $stage | Out-Null
+  Initialize-StagingDirectory $stage
   try {
     foreach ($component in @($manifest.components)) {
       $condition = if ($component.PSObject.Properties['condition']) { [string]$component.condition } else { '' }
@@ -573,7 +591,7 @@ try {
     if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
   }
 } catch {
-  $failure = "Team DevSpace bootstrap failed: $($_.Exception.Message)"
+  $failure = "Team DevSpace bootstrap failed at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)"
   try { [IO.File]::AppendAllText((Join-Path $InstallPath 'bootstrap-error.log'), "$(Get-Date -Format o) $failure`r`n") } catch {}
   Write-Error $failure
   exit 1
