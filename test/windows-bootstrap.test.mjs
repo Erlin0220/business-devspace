@@ -41,6 +41,7 @@ test('Windows staging handles a real sharing lock and rejects a persistent handl
   // startup, process cleanup or Enrollment entrypoints on the development host.
   const command = String.raw`
 $ErrorActionPreference = 'Stop'
+$fixtureClock = [Diagnostics.Stopwatch]::StartNew()
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'platform/windows/bootstrap.ps1'), [ref]$null, [ref]$null)
 foreach ($name in @('Remove-PayloadTree', 'Initialize-StagingDirectory')) {
   $fn = $ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}, $true)
@@ -64,6 +65,8 @@ public static class LockedDirectoryFixture {
   }
 }
 '@
+$fixtureSetupMs = $fixtureClock.ElapsedMilliseconds
+Write-Output ('staging-fixture-setup-ms=' + $fixtureSetupMs)
 $root = Join-Path $env:TEMP ('tds-stage-test-' + [Guid]::NewGuid().ToString('N'))
 $stage = Join-Path $root 's'
 $active = Join-Path $root 'active.json'
@@ -94,6 +97,7 @@ try {
   $rejected = $false
   try { Initialize-StagingDirectory $stage } catch { $rejected = $true }
   if (-not $rejected -or $elapsed.Elapsed.TotalSeconds -gt 12) { throw 'Persistent lock was ignored or retried without a bound' }
+  Write-Output ('staging-persistent-lock-ms=' + $elapsed.ElapsedMilliseconds)
   if ([IO.File]::ReadAllText($active) -ne 'previous-version-must-survive') { throw 'Active version was changed' }
   Write-Output 'locked-directory-regression-passed'
 } finally {
@@ -101,8 +105,17 @@ try {
   if ([IO.Directory]::Exists($root)) { [IO.Directory]::Delete($root, $true) }
 }
 `;
-  const output = execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
-    { cwd: process.cwd(), windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+  // Cold PowerShell/.NET compilation belongs to the test harness, not the
+  // installer retry deadline. The persistent-lock assertion above stays 12s.
+  let output;
+  try {
+    output = execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+      { cwd: process.cwd(), windowsHide: true, encoding: 'utf8', timeout: 60000, stdio: 'pipe' });
+  } catch (error) {
+    console.error(String(error.stdout ?? '').slice(-2000));
+    throw error;
+  }
+  console.log(output.trim());
   assert.match(output, /locked-directory-regression-passed/);
 });
 
@@ -153,7 +166,9 @@ test('Windows rollback process discovery matches the real installation prefix, n
     "$ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'platform/windows/bootstrap.ps1'),[ref]$null,[ref]$null)",
     "$fn=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-InstallProcessIds'},$true)",
     "Invoke-Expression $fn.Extent.Text",
-    "$script:InstallPath=Join-Path $env:TEMP 'tds-owner-predicate-test'",
+    // This mocks process metadata only: a synthetic absolute root keeps DOS
+    // aliases in the test host's TEMP directory out of the path predicate.
+    "$script:InstallPath=Join-Path ([IO.Path]::GetPathRoot($PSHOME)) 'tds-owner-predicate-test'",
     "function Get-CimInstance { @([pscustomobject]@{Name='node.exe';ExecutablePath=(Join-Path $script:InstallPath 'v/1/runtime/node.exe');ProcessId=21},[pscustomobject]@{Name='node.exe';ExecutablePath=(Join-Path ($script:InstallPath+'-foreign') 'v/1/runtime/node.exe');ProcessId=22},[pscustomobject]@{Name='other.exe';ExecutablePath=(Join-Path $script:InstallPath 'v/1/other.exe');ProcessId=23},[pscustomobject]@{Name='node.exe';ExecutablePath=$null;ProcessId=24}) }",
     "$actual=@(Get-InstallProcessIds)",
     "if($actual.Count -ne 1 -or $actual[0] -ne 21){throw 'Incorrect executable ownership prefix'}",
@@ -169,7 +184,7 @@ test('Windows cleanup fails closed on unavailable ownership queries and pins a h
     "$ErrorActionPreference='Stop'",
     "$ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'platform/windows/bootstrap.ps1'),[ref]$null,[ref]$null)",
     "foreach($name in @('Get-InstallProcessIds','Stop-OwnedInstallProcess')) { $fn=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true); if(-not $fn){throw 'Missing owned cleanup helper'}; Invoke-Expression $fn.Extent.Text }",
-    "$script:InstallPath=Join-Path $env:TEMP 'tds-owned-handle-test'",
+    "$script:InstallPath=Join-Path ([IO.Path]::GetPathRoot($PSHOME)) 'tds-owned-handle-test'",
     "function Get-CimInstance { [CmdletBinding()] param([string]$ClassName); Write-Error 'CIM unavailable' }",
     "$rejected=$false;try { $null=Get-InstallProcessIds } catch { $rejected=$true };if(-not $rejected){throw 'Uncertain ownership was treated as no processes'}",
     "$script:fake=[pscustomobject]@{Path=(Join-Path $script:InstallPath 'v/1/runtime/node.exe')}",
