@@ -1,0 +1,101 @@
+name: Native installer candidates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-candidates-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    environment: validation
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            target: win32-x64
+          - runner: ubuntu-24.04
+            target: linux-x64
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: metadata
+        run: node scripts/ci-metadata.mjs
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.metadata.outputs.node }}
+          package-manager-cache: false
+      - name: Require matching native architecture and sample-only configuration
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          node --input-type=module -e "import release from './scripts/release-profile.mjs'; if(process.platform+'-'+process.arch!==process.env.EXPECTED_TARGET)throw Error('Native runner mismatch'); if(release.gateway!=='https://gateway.example.com'||release.distribution.origin!=='https://downloads.example.com')throw Error('Public validation must not embed operator configuration');"
+      - name: Install locked build tools
+        env:
+          BUILD_NPM: ${{ steps.metadata.outputs.npm }}
+        run: npx --yes "$BUILD_NPM" ci --no-audit --no-fund
+      - id: go-version
+        if: runner.os == 'macOS'
+        run: node -e "const fs=require('fs'),r=require('./release.config.json');fs.appendFileSync(process.env.GITHUB_OUTPUT,'version='+r.cloudflaredGoVersion+'\n')"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: runner.os == 'macOS'
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
+      - name: Build pinned cloudflared on matching native macOS
+        if: runner.os == 'macOS'
+        run: node scripts/macos-cloudflared.mjs
+      - name: Build installer from this exact checkout
+        run: npm run package
+      - name: Verify final package layout
+        run: node scripts/verify-release.mjs --target "$EXPECTED_TARGET"
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+      - name: Accept final Windows installer in the disposable runner
+        if: runner.os == 'Windows'
+        env:
+          TEAM_DEVSPACE_UPGRADE_BASELINE_ORIGIN: ${{ secrets.UPGRADE_BASELINE_ORIGIN }}
+        run: npm run acceptance:platform -- --direct-windows-installer
+      - name: Accept final macOS package in the disposable runner
+        if: runner.os == 'macOS'
+        env:
+          TEAM_DEVSPACE_UPGRADE_BASELINE_ORIGIN: ${{ secrets.UPGRADE_BASELINE_ORIGIN }}
+        run: npm run acceptance:platform -- --system-macos-installer
+      - name: Accept final Linux archive with the user service manager
+        if: runner.os == 'Linux'
+        env:
+          TEAM_DEVSPACE_UPGRADE_BASELINE_ORIGIN: ${{ secrets.UPGRADE_BASELINE_ORIGIN }}
+        run: |
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@$(id -u).service"
+          systemctl --user show-environment >/dev/null
+          npm run acceptance:platform
+      - name: Retain acceptance receipt only - binary redistribution is not approved
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: acceptance-${{ matrix.target }}-${{ github.sha }}
+          path: release/offline/${{ steps.metadata.outputs.version }}/${{ matrix.target }}/acceptance.json
+          if-no-files-found: error
+          retention-days: 30
+
+# Source-only public CI: no operator profile, production signing key, employee
+# credentials, installer uploads, Releases, deployment or rollout mutation.
+# Old immutable installers are read-only test inputs, never public artifacts.

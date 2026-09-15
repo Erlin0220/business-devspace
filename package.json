@@ -1,0 +1,85 @@
+{
+  "name": "team-devspace",
+  "version": "0.2.6",
+  "private": true,
+  "license": "PolyForm-Shield-1.0.0",
+  "type": "module",
+  "description": "Pinned DevSpace distribution with per-device Cloudflare connectivity for a shared ChatGPT app",
+  "author": {
+    "name": "Erlin0220",
+    "email": "24458678+Erlin0220@users.noreply.github.com"
+  },
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0",
+    "npm": ">=11.19.1 <12"
+  },
+  "packageManager": "npm@11.19.1",
+  "bin": {
+    "team-devspace": "client/cli.mjs"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "test:runtime": "node --test --test-concurrency=1 test/runtime.test.mjs",
+    "test:native": "node scripts/native-smoke.mjs",
+    "build:tray": "node scripts/tray-build.mjs",
+    "test:tray": "node scripts/tray-smoke.mjs",
+    "test:installer": "node scripts/installer-smoke.mjs",
+    "test:installer:unix": "node scripts/unix-installer-smoke.mjs",
+    "test:standalone": "node scripts/standalone-smoke.mjs",
+    "test:distribution": "node --test --test-concurrency=1 test/distribution.test.mjs test/downloads.test.mjs test/interactive-setup.test.mjs",
+    "downloads:publish": "node scripts/publish-downloads.mjs",
+    "downloads:deploy": "node scripts/publish-downloads.mjs --init-server",
+    "downloads:site": "node scripts/publish-downloads.mjs --site-only",
+    "downloads:preview": "node scripts/publish-downloads.mjs --preview",
+    "macos:ci": "node scripts/codemagic.mjs",
+    "acceptance:platform": "node scripts/platform-acceptance.mjs",
+    "acceptance:local": "npm run check && npm test && npm run test:distribution && npm run deploy -- --dry-run && npm run package -- --reuse-dependencies && npm run acceptance:platform",
+    "acceptance:linux:wsl": "pwsh -NoProfile -File scripts/linux-wsl.ps1",
+    "verify:release": "node scripts/verify-release.mjs",
+    "verify:acceptance": "node scripts/verify-acceptance.mjs",
+    "assets": "node scripts/assets.mjs",
+    "configure": "node scripts/configure.mjs",
+    "dev:gateway": "wrangler dev --local",
+    "deploy": "node scripts/deploy.mjs",
+    "package": "node scripts/package.mjs",
+    "acceptance": "node scripts/acceptance.mjs",
+    "admin": "node client/admin.mjs"
+  },
+  "dependencies": {
+    "@waishnav/devspace": "1.0.8",
+    "jose": "6.2.12",
+    "proper-lockfile": "4.1.2"
+  },
+  "allowScripts": {
+    "@google/genai@1.52.0": false,
+    "@waishnav/devspace@1.0.8": true,
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": false,
+    "node-pty@1.1.0": true,
+    "protobufjs@7.6.5": true,
+    "sharp@0.35.4": true,
+    "workerd@1.20260730.1": true,
+    "workerd@1.20260908.1": true
+  },
+  "overrides": {
+    "@earendil-works/pi-coding-agent": {
+      "undici": "8.10.2",
+      "brace-expansion": "5.0.9",
+      "protobufjs": "7.6.5"
+    },
+    "miniflare": {
+      "sharp": "0.35.4",
+      "undici": "7.29.0"
+    }
+  },
+  "devDependencies": {
+    "@clack/prompts": "1.5.1",
+    "esbuild": "0.28.1",
+    "npm": "11.19.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "miniflare": "4.20260730.0",
+    "wrangler": "4.130.0"
+  }
+}

@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "@waishnav/devspace"
+        update-types: [version-update:semver-major, version-update:semver-minor, version-update:semver-patch]
+    groups:
+      development-tools:
+        dependency-type: development
+# Runtime version upgrades are deliberate compatibility work, never auto-merge.
+# Restore the limits to 3 after the Public/checks/native-CI cutover is verified.
+# Zero pauses version-update PRs during exhausted private quota, not security alerts.
