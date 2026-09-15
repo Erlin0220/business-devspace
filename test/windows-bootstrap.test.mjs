@@ -26,6 +26,86 @@ test('Windows activation pointer failure restores previous startup ownership', a
   assert.ok(script.includes('Local activation pointer update failed; ${recovery}'));
 });
 
+test('Windows staging is reset before stopping the active version without a create-delete-create shortcut', async () => {
+  const script = await readFile('platform/windows/bootstrap.ps1', 'utf8');
+  assert.ok(script.includes('Initialize-StagingDirectory $stage'));
+  assert.doesNotMatch(script, /-Path \$versionsRoot, \$stagingRoot/);
+  assert.ok(script.indexOf('Initialize-StagingDirectory $stage') < script.indexOf("Write-Step 'Stopping the active local version"));
+  assert.match(script, /Remove-PayloadTree \$Path\r?\n\s+New-Item -ItemType Directory -Path \$Path -ErrorAction Stop/);
+});
+
+test('Windows staging handles a real sharing lock and rejects a persistent handle without touching active state',
+  { skip: process.platform !== 'win32' }, () => {
+  const powershell = join(process.env.SystemRoot, 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  // Extract only the two filesystem helpers. Never execute bootstrap's install,
+  // startup, process cleanup or Enrollment entrypoints on the development host.
+  const command = String.raw`
+$ErrorActionPreference = 'Stop'
+$ast = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'platform/windows/bootstrap.ps1'), [ref]$null, [ref]$null)
+foreach ($name in @('Remove-PayloadTree', 'Initialize-StagingDirectory')) {
+  $fn = $ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}, $true)
+  if (-not $fn) { throw 'Missing staging helper' }
+  Invoke-Expression $fn.Extent.Text
+}
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+public static class LockedDirectoryFixture {
+  public static FileStream Hold(string path) {
+    Directory.CreateDirectory(path);
+    return new FileStream(Path.Combine(path, "held.txt"), FileMode.Create,
+      FileAccess.ReadWrite, FileShare.Read);
+  }
+  public static void ReleaseSoon(FileStream handle) {
+    Thread thread = new Thread(delegate() { Thread.Sleep(500); handle.Dispose(); });
+    thread.IsBackground = true;
+    thread.Start();
+  }
+}
+'@
+$root = Join-Path $env:TEMP ('tds-stage-test-' + [Guid]::NewGuid().ToString('N'))
+$stage = Join-Path $root 's'
+$active = Join-Path $root 'active.json'
+$held = $null
+try {
+  [void][IO.Directory]::CreateDirectory($stage)
+  [IO.File]::WriteAllText($active, 'previous-version-must-survive')
+  [IO.File]::WriteAllText((Join-Path $stage 'stale.txt'), 'old staging data')
+  Initialize-StagingDirectory $stage
+  if (@(Get-ChildItem -LiteralPath $stage -Force).Count) { throw 'Stale payload survived reset' }
+
+  $held = [LockedDirectoryFixture]::Hold($stage)
+  $originalRejected = $false
+  try { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop }
+  catch {
+    $cause = $_.Exception.GetBaseException()
+    if ($cause -isnot [UnauthorizedAccessException] -and $cause -isnot [IO.IOException]) { throw }
+    $originalRejected = $true
+  }
+  if (-not $originalRejected) { throw 'The fixture did not reproduce staging cleanup denial' }
+  [LockedDirectoryFixture]::ReleaseSoon($held)
+  $held = $null
+  Initialize-StagingDirectory $stage
+  if (-not [IO.Directory]::Exists($stage)) { throw 'Released directory was not recreated' }
+
+  $held = [LockedDirectoryFixture]::Hold($stage)
+  $elapsed = [Diagnostics.Stopwatch]::StartNew()
+  $rejected = $false
+  try { Initialize-StagingDirectory $stage } catch { $rejected = $true }
+  if (-not $rejected -or $elapsed.Elapsed.TotalSeconds -gt 12) { throw 'Persistent lock was ignored or retried without a bound' }
+  if ([IO.File]::ReadAllText($active) -ne 'previous-version-must-survive') { throw 'Active version was changed' }
+  Write-Output 'locked-directory-regression-passed'
+} finally {
+  if ($held) { $held.Dispose() }
+  if ([IO.Directory]::Exists($root)) { [IO.Directory]::Delete($root, $true) }
+}
+`;
+  const output = execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+    { cwd: process.cwd(), windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+  assert.match(output, /locked-directory-regression-passed/);
+});
+
 test('Windows bootstrap parses in the 32-bit PowerShell 5 host used by NSIS', { skip: process.platform !== 'win32' }, () => {
   const powershell = join(process.env.SystemRoot, 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const command = "$errors=@();[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'platform/windows/bootstrap.ps1'),[ref]$null,[ref]$errors);if($errors.Count){$errors|Out-String|Write-Error;exit 1}";

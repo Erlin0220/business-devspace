@@ -50,6 +50,9 @@ jobs:
         env:
           BUILD_NPM: ${{ steps.metadata.outputs.npm }}
         run: npx --yes "$BUILD_NPM" ci --no-audit --no-fund
+      - name: Verify native Windows bootstrap regressions
+        if: runner.os == 'Windows'
+        run: node --test test/windows-bootstrap.test.mjs
       - id: go-version
         if: runner.os == 'macOS'
         run: node -e "const fs=require('fs'),r=require('./release.config.json');fs.appendFileSync(process.env.GITHUB_OUTPUT,'version='+r.cloudflaredGoVersion+'\n')"
