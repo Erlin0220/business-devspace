@@ -33,7 +33,9 @@ export async function buildDownloadCatalog(directory, version, commit) {
   return validateCatalog({ schema: 1, version, commit, targets });
 }
 
-export async function prepareSite(directory, output, catalog, origin, notes, { signer = signUpdateCatalog } = {}) {
+export async function prepareSite(directory, output, catalog, origin, notes, {
+  signer = signUpdateCatalog, signedUpdate, publicKey = release.distribution.updatePublicKey,
+} = {}) {
   validateCatalog(catalog); httpsOrigin(origin);
   await mkdir(output, { recursive: true });
   if ((await readdir(output)).length) throw new Error('Site staging directory must be empty');
@@ -50,8 +52,13 @@ export async function prepareSite(directory, output, catalog, origin, notes, { s
       target, commit, sourceDirty, releaseProfileSha256, entrypoint, checks, limitations }, null, 2)}\n`);
   }
   const scripts = installScripts(catalog, origin);
+  const update = signedUpdate ?? await signer(catalog);
+  if (signedUpdate) {
+    const verified = await verifySignedCatalog(signedUpdate, publicKey, catalog.version);
+    if (JSON.stringify(verified) !== JSON.stringify(catalog)) throw new Error('Provided signed update metadata differs from accepted package metadata');
+  }
   await writeFile(join(output, 'catalog.json'), `${JSON.stringify(catalog, null, 2)}\n`);
-  await writeFile(join(output, 'update.json'), `${JSON.stringify(await signer(catalog), null, 2)}\n`);
+  await writeFile(join(output, 'update.json'), `${JSON.stringify(update, null, 2)}\n`);
   await writeFile(join(output, 'install.ps1'), scripts.windows);
   await writeFile(join(output, 'install.sh'), scripts.unix);
   await writeFile(join(output, 'index.html'), downloadPage(catalog, origin));
@@ -187,19 +194,19 @@ export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: {
     publish: { type: 'boolean' }, 'full-https-verify': { type: 'boolean' }, activate: { type: 'string' }, 'init-server': { type: 'boolean' }, 'site-only': { type: 'boolean' }, preview: { type: 'boolean' },
     config: { type: 'string', default: '.runtime/downloads.json' }, version: { type: 'string' },
-    commit: { type: 'string' }, directory: { type: 'string' }, help: { type: 'boolean' },
+    commit: { type: 'string' }, directory: { type: 'string' }, 'signed-update': { type: 'string' }, help: { type: 'boolean' },
   } });
   if (values.help) {
-    console.log('Prepare accepted release: npm run downloads:publish\nInitialize existing Caddy site (DNS must be ready): npm run downloads:deploy\nPublish + verify HTTPS + activate: npm run downloads:publish -- --publish\nPreview the homepage locally from the active catalog: npm run downloads:preview\nRefresh only the public homepage: npm run downloads:site\nRecover an unpruned staged release: npm run downloads:publish -- --activate <version>\nOptional full HTTPS hash verification: add --full-https-verify\nImport accepted artifacts: add --version <version> --commit <source-commit> --directory <four-target-directory>\nNo Access Key, download ticket, R2 or HTTP publishing credentials. Uses existing SSH.');
+    console.log('Prepare accepted release: npm run downloads:publish -- --signed-update <verified-update.json>\nInitialize existing Caddy site (DNS must be ready): npm run downloads:deploy\nPublish + verify HTTPS + activate: npm run downloads:publish -- --publish --signed-update <verified-update.json>\nPreview the homepage locally from the active catalog: npm run downloads:preview\nRefresh only the public homepage: npm run downloads:site\nRecover an unpruned staged release: npm run downloads:publish -- --activate <version>\nOptional full HTTPS hash verification: add --full-https-verify\nImport accepted artifacts: add --version <version> --commit <source-commit> --directory <four-target-directory>\nProduction signing is completed in the protected GitHub public-release Environment; the download publisher consumes already-signed metadata and never owns the private signing key.');
     return;
   }
   const origin = httpsOrigin(release.distribution.origin);
   const version = values.activate ?? values.version ?? release.version;
   if (!VERSION.test(version)) throw new Error('Invalid release version');
-  if (values.activate && (values.commit || values.directory || values.version || values.publish || values['init-server'] || values['site-only'])) throw new Error('Activation is a separate operation');
-  if (values['site-only'] && (values.publish || values['init-server'] || values.commit || values.directory || values.version)) throw new Error('Homepage refresh is a separate operation');
+  if (values.activate && (values.commit || values.directory || values.version || values.publish || values['init-server'] || values['site-only'] || values['signed-update'])) throw new Error('Activation is a separate operation');
+  if (values['site-only'] && (values.publish || values['init-server'] || values.commit || values.directory || values.version || values['signed-update'])) throw new Error('Homepage refresh is a separate operation');
   if (values.preview) {
-    if (values.publish || values.activate || values['init-server'] || values['site-only'] || values.commit || values.directory || values.version) throw new Error('Homepage preview is a separate read-only operation');
+    if (values.publish || values.activate || values['init-server'] || values['site-only'] || values.commit || values.directory || values.version || values['signed-update']) throw new Error('Homepage preview is a separate read-only operation');
     const catalog = validateCatalog(JSON.parse(await smallBody(await request(`${origin}/catalog.json`))));
     const output = resolve('build', 'downloads', 'homepage-preview');
     const page = await prepareHomepage(output, catalog, origin);
@@ -257,10 +264,15 @@ export async function main(argv = process.argv.slice(2)) {
       catalog = await buildDownloadCatalog(directory, version, commit);
       const output = resolve('build', 'downloads', version);
       await rm(output, { recursive: true, force: true });
+      let signedUpdate;
+      if (values['signed-update']) signedUpdate = JSON.parse(await readFile(resolve(values['signed-update']), 'utf8'));
+      else if (release.distribution.updatePublicKey !== 'A'.repeat(43)) {
+        throw new Error('Production release preparation requires already-signed update metadata from the protected public-release Environment');
+      }
       let notes;
       try { notes = await readFile(`docs/release-notes-${version}.md`, 'utf8'); }
       catch (error) { if (error.code !== 'ENOENT') throw error; notes = `Team DevSpace ${version}\nSource commit: ${commit}\nRetained accepted release. See catalog.json and acceptance-*.json for exact artifact identity and validation limitations.\n`; }
-      await prepareSite(directory, output, catalog, origin, notes);
+      await prepareSite(directory, output, catalog, origin, notes, { signedUpdate });
       const after = sourceIdentity();
       if (after.sourceDirty || after.commit !== identity.commit) throw new Error('Source tree changed while preparing the release');
       console.log(JSON.stringify({ prepared: true, version, commit, origin,

@@ -19,7 +19,7 @@ try {
   $temporary = $request.resultFile + '.tmp'
   [IO.File]::WriteAllText($temporary, $result, [Text.UTF8Encoding]::new($false))
   Move-Item -LiteralPath $temporary -Destination $request.resultFile -Force
-  # The task is a single installer handoff outside the tray Job Object, not a daemon.
-  Unregister-ScheduledTask -TaskName $request.taskName -Confirm:$false -ErrorAction SilentlyContinue
+  # The parent configured Task Scheduler expiry for this one-shot registration.
+  # A RunLevel Limited action cannot reliably delete its own registered task.
 }
 exit $code

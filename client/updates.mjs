@@ -238,8 +238,14 @@ export async function handoffInstaller(file, version, home, root, {
 $arguments = '--cwd "' + $env:TDS_UPDATE_DIR + '" --stdout "' + (Join-Path $env:TDS_UPDATE_DIR 'installer.log') + '" --stderr "' + (Join-Path $env:TDS_UPDATE_DIR 'installer.error.log') + '" -- "' + (Join-Path $PSHOME 'powershell.exe') + '" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $env:TDS_UPDATE_HELPER + '" -RequestFile "' + $env:TDS_UPDATE_REQUEST + '"'
 $action = New-ScheduledTaskAction -Execute $env:TDS_UPDATE_LAUNCHER -Argument $arguments
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-Register-ScheduledTask -TaskName $env:TDS_UPDATE_TASK -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+# The limited task cannot reliably unregister its own Task Scheduler registration.
+# Give the scheduler an already-missed inert trigger solely to define an expiration
+# boundary. DeleteExpiredTaskAfter removes the registration shortly afterward;
+# deleting a task does not terminate an already-running action.
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(-5)
+$trigger.EndBoundary = (Get-Date).AddSeconds(15).ToString('s')
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -DeleteExpiredTaskAfter (New-TimeSpan -Seconds 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName $env:TDS_UPDATE_TASK -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName $env:TDS_UPDATE_TASK
 `, { env: { TDS_UPDATE_HELPER: helper, TDS_UPDATE_REQUEST: requestFile, TDS_UPDATE_TASK: taskName,
       TDS_UPDATE_LAUNCHER: updateLauncher, TDS_UPDATE_DIR: directory } });

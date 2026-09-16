@@ -14,6 +14,15 @@ Use the single-context domain documentation layout. See `docs/agents/domain.md`.
 
 ## Team DevSpace durable decisions
 
+### Secret durability incident (2026-09-16)
+
+- The production Ed25519 update-signing private key was originally created as one per-user local PEM and later became unavailable. A genuine 0.2.6 `update.json` proves the key had been used successfully; exhaustive local/Git/NTFS/backup/server searches did not recover it, and the surviving audit trail cannot prove the exact deletion command. The preventable design failure was allowing a non-recoverable trust key to have one effective local copy while backup was only documented, not enforced.
+- Production update signing must never silently fall back to `~/.team-devspace-admin`, `.runtime`, a developer home directory, or another workstation-only path. The daily release key belongs in the protected GitHub `public-release` Environment. The public key remains client-visible release-profile data. Aliyun/Caddy publication consumes already-signed `update.json` and must not receive the private key.
+- `MASTER_KEY` is a data-encryption root, not an ordinary API token. It decrypts existing D1 `device_secret_box` values. Never regenerate, replace, or rotate it as cleanup. A rotation requires an explicit compatibility/migration procedure that preserves decryptability until every retained ciphertext has been migrated and verified.
+- Secrets are classified by recovery behavior. API/admin/tunnel/access credentials must be revocable and re-issuable. Identity/encryption private keys (update-signing keys, `MASTER_KEY`, and any retained Windows/macOS signing identity) require a tested independent recovery copy or a deliberate key-rotation protocol before they are allowed to become production dependencies.
+- The old private `Erlin0220/team-devspace` repository remains an internal history/recovery archive until all production Environment secrets have been migrated and independently verified in `Erlin0220/business-devspace`. Do not delete its `production` Environment merely because the public source migration is complete.
+- Every production-secret change must update `docs/ops/secret-disaster-recovery-2026-09-16.md` and answer: where the primary copy lives, what independent recovery path exists, whether the same identity can be reconstructed, and the exact safe rotation/re-enrollment procedure. “Generate another random value” is never an acceptable recovery step for an identity/encryption root without migration evidence.
+
 ### Release acceptance freeze (2026-09-15)
 
 - D1 remote statement parsing rejects semicolons inside SQL comments even when local SQLite accepts them. Keep migration comments free of statement delimiters; `test/migrations.test.mjs` guards the verified production failure.

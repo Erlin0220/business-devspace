@@ -57,3 +57,10 @@ file or rewriting Git is not revocation. Inspect history, tags, PR refs, logs,
 artifacts, releases and clones before changing visibility. Coordinate history
 cleanup and backups as a separate approved operation. Never automatically
 rotate MASTER_KEY or update-signing keys during a source-cleanup task.
+
+Treat secret loss and secret compromise as separate incidents. Replaceable bearer
+credentials may be revoked and re-issued. Encryption/signing roots must not be
+silently regenerated: preserve the exact key or execute a documented migration
+that proves existing ciphertext/trust remains recoverable. Production update
+signing has no per-user local-key fallback. See
+`docs/ops/secret-disaster-recovery-2026-09-16.md` for the current recovery matrix.
