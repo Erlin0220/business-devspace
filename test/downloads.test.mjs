@@ -6,14 +6,17 @@ import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { DOWNLOAD_TARGETS, ALIASES, packageName, httpsOrigin, validateCatalog, downloadPage } from '../scripts/download-catalog.mjs';
 import { buildDownloadCatalog, prepareSite, prepareHomepage, main, retainedReleaseVersions } from '../scripts/publish-downloads.mjs';
+import { UPGRADE_BASELINES } from '../scripts/upgrade-baselines.mjs';
 import { testBash } from './test-bash.mjs';
 
 const bash = testBash();
 
 test('release cleanup retains cold-cache upgrade fixtures independently of rollout policy', () => {
+  const baselines = Object.keys(UPGRADE_BASELINES);
   const retained = retainedReleaseVersions('0.2.6', { auto: '0.2.5', minimumSupported: null });
-  assert.deepEqual(retained, ['0.2.6', '0.2.5', '0.2.3', '0.2.4']);
-  assert.deepEqual(retainedReleaseVersions('0.2.4', { auto: '0.2.4', minimumSupported: '0.2.3' }), ['0.2.4', '0.2.3']);
+  assert.deepEqual(retained, [...new Set(['0.2.6', '0.2.5', ...baselines])]);
+  assert.deepEqual(retainedReleaseVersions('0.2.4', { auto: '0.2.4', minimumSupported: '0.2.3' }),
+    [...new Set(['0.2.4', '0.2.3', ...baselines])]);
 });
 import { verifyAcceptance } from '../scripts/verify-acceptance.mjs';
 import { renderAdmin } from '../gateway/admin-web.mjs';

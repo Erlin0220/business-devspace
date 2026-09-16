@@ -19,6 +19,15 @@ export const UPGRADE_BASELINES = {
     'darwin-x64': '76a867a761de5028d391f6b0ab32d453f5d9ee0dd7b955c23345f52306457a29',
     'linux-x64': '0db409c7123812841452b574c084dfa949504420011cec24558552f172d664c1',
   },
+  // Exact production catalog bytes published for the current employee release.
+  // Read back from the immutable 0.2.6 catalog on 2026-09-16; never rebuild an
+  // approximation of this baseline when validating the 0.2.7 upgrade path.
+  '0.2.6': {
+    'win32-x64': '97cd7c44dab3401aa82e8f9ad72888fc547dd79aea664364c904a53051234652',
+    'darwin-arm64': '0e8c4acb7e396edb19957c5e7964c4acf66298aa72ad13d24c449be115fc2516',
+    'darwin-x64': '63cb392be269a7877f538cab3e670f351bcad010cdcc63040c6308448edf87a2',
+    'linux-x64': '47bb9b990c14a39b39a579cac1547e11ed6ed80bd5a0683ad157884298d403cb',
+  },
 };
 
 export async function downloadUpgradeBaseline(version, target) {

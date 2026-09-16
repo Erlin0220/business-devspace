@@ -4,6 +4,8 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { validateDistributionConfig } from './distribution.mjs';
 import { compareDottedVersions, machOMinimumMacOS, run, sha256File } from './build-utils.mjs';
+import { verifyCloudflaredNotices } from './cloudflared-source.mjs';
+import { verifyNpmLicenseEvidence } from './npm-license-evidence.mjs';
 
 const { values } = parseArgs({ options: {
   root: { type: 'string' }, target: { type: 'string' }, installed: { type: 'string' },
@@ -77,6 +79,15 @@ for (const target of targets) {
     const provenance = JSON.parse(await readFile(join(installed, 'release-provenance.json'), 'utf8'));
     assert.equal(provenance.target, target);
     assert.equal(provenance.release, release.version);
+    const cloudflaredLicenses = await verifyCloudflaredNotices(join(installed, 'LICENSES', 'cloudflared'));
+    assert.equal(provenance.cloudflaredLicenses?.sourceCommit, release.cloudflaredSourceCommit);
+    assert.equal(provenance.cloudflaredLicenses?.files, cloudflaredLicenses.files.length);
+    assert.equal(provenance.cloudflaredLicenses?.manifestSha256,
+      await sha256File(join(installed, 'LICENSES', 'cloudflared', 'MANIFEST.json')));
+    const npmLicenses = await verifyNpmLicenseEvidence(installed);
+    assert.equal(provenance.npmLicenses?.packages, npmLicenses.packages);
+    assert.equal(provenance.npmLicenses?.fallbackPackages, npmLicenses.fallbackPackages);
+    assert.equal(provenance.npmLicenses?.manifestSha256, npmLicenses.manifestSha256);
     assert.equal(await sha256File(join(installed, cloudPath)),
       provenance.cloudflaredBuild?.sha256 ?? provenance.binaries.cloudflared.sha256);
     const cloudVersion = await run(join(installed, cloudPath), ['--version'], { capture: true });

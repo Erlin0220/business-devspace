@@ -1,0 +1,251 @@
+name: Publish accepted public installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_release:
+        description: 'Type the exact immutable tag to authorize publication, for example v0.2.7'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-release
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: metadata
+        run: node scripts/ci-metadata.mjs
+      - name: Refuse an existing immutable public version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONFIRM_RELEASE: ${{ inputs.confirm_release }}
+        run: |
+          tag="v${{ steps.metadata.outputs.version }}"
+          test "$CONFIRM_RELEASE" = "$tag"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; immutable public releases are never overwritten." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists; immutable public releases are never overwritten." >&2
+            exit 1
+          fi
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
+            --title "Team DevSpace ${{ steps.metadata.outputs.version }}" \
+            --notes-file "docs/release-notes-${{ steps.metadata.outputs.version }}.md"
+
+  build:
+    needs: gate
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            target: win32-x64
+          - runner: ubuntu-24.04
+            target: linux-x64
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 70
+    env:
+      TEAM_DEVSPACE_RELEASE_PROFILE_JSON: ${{ vars.TEAM_DEVSPACE_RELEASE_PROFILE }}
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: metadata
+        run: node scripts/ci-metadata.mjs
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.metadata.outputs.node }}
+          package-manager-cache: false
+      - name: Require production public profile and matching native architecture
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import release, { requireProductionProfile } from './scripts/release-profile.mjs';
+          requireProductionProfile(release);
+          if (`${process.platform}-${process.arch}` !== process.env.EXPECTED_TARGET) throw Error('Native runner mismatch');
+          fs.appendFileSync(process.env.GITHUB_ENV, `TEAM_DEVSPACE_UPGRADE_BASELINE_ORIGIN=${release.distribution.origin}\n`);
+          NODE
+      - name: Install locked build tools
+        env:
+          BUILD_NPM: ${{ steps.metadata.outputs.npm }}
+        run: npx --yes "$BUILD_NPM" ci --no-audit --no-fund
+      - id: go-version
+        if: runner.os == 'macOS'
+        run: node -e "const fs=require('fs'),r=require('./release.config.json');fs.appendFileSync(process.env.GITHUB_OUTPUT,'version='+r.cloudflaredGoVersion+'\n')"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: runner.os == 'macOS'
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
+      - name: Build pinned cloudflared on matching native macOS
+        if: runner.os == 'macOS'
+        run: node scripts/macos-cloudflared.mjs
+      - name: Build exact production-profile installer
+        run: npm run package
+      - name: Verify exact package and redistribution evidence
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          node scripts/verify-release.mjs --target "$EXPECTED_TARGET"
+          mkdir -p "build/redistribution/$EXPECTED_TARGET"
+          node scripts/audit-inventory.mjs --directory "build/bundle-$EXPECTED_TARGET" --output "build/redistribution/$EXPECTED_TARGET/syft.json"
+          node scripts/verify-redistribution.mjs --bundle "build/bundle-$EXPECTED_TARGET" --inventory "build/redistribution/$EXPECTED_TARGET/syft.json.summary.json" --output "build/redistribution/$EXPECTED_TARGET/evidence.json"
+      - name: Accept exact Windows installer
+        if: runner.os == 'Windows'
+        run: npm run acceptance:platform -- --direct-windows-installer
+      - name: Accept exact macOS package
+        if: runner.os == 'macOS'
+        run: npm run acceptance:platform -- --system-macos-installer
+      - name: Accept exact Linux archive
+        if: runner.os == 'Linux'
+        run: |
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@$(id -u).service"
+          systemctl --user show-environment >/dev/null
+          npm run acceptance:platform
+      - name: Stage only the already-accepted release input
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs'; import path from 'node:path';
+          import release from './scripts/release-profile.mjs'; import { packageName } from './client/release-catalog.mjs';
+          const target=process.env.EXPECTED_TARGET, source=path.join('release','offline',release.version,target);
+          const out=path.join('build','public-release-input',target); fs.mkdirSync(out,{recursive:true});
+          fs.copyFileSync(path.join(source,packageName(release.version,target)),path.join(out,packageName(release.version,target)));
+          fs.copyFileSync(path.join(source,'acceptance.json'),path.join(out,`acceptance-${target}.json`));
+          fs.copyFileSync(path.join('build','redistribution',target,'evidence.json'),path.join(out,`redistribution-${target}.json`));
+          NODE
+      - name: Transfer exact accepted bytes into the private Draft Release
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          out="build/public-release-input/$EXPECTED_TARGET"
+          gh release upload "v$VERSION" --repo "$GITHUB_REPOSITORY" "$out"/*
+
+  publish:
+    needs: [gate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: public-release
+    permissions:
+      contents: write
+      issues: write
+    env:
+      TEAM_DEVSPACE_RELEASE_PROFILE_JSON: ${{ vars.TEAM_DEVSPACE_RELEASE_PROFILE }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read back only the private Draft Release assets
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          mkdir -p build/draft-assets
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --dir build/draft-assets
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs'; import path from 'node:path';
+          import release from './scripts/release-profile.mjs'; import { packageName } from './client/release-catalog.mjs';
+          for(const target of release.distribution.targets){
+            const out=path.join('build','public-release-inputs',target); fs.mkdirSync(out,{recursive:true});
+            fs.copyFileSync(path.join('build','draft-assets',packageName(release.version,target)),path.join(out,packageName(release.version,target)));
+            fs.copyFileSync(path.join('build','draft-assets',`acceptance-${target}.json`),path.join(out,'acceptance.json'));
+            fs.copyFileSync(path.join('build','draft-assets',`redistribution-${target}.json`),path.join(out,'evidence.json'));
+          }
+          NODE
+      - name: Reverify transferred bytes against all native acceptance receipts
+        run: node scripts/prepare-public-release.mjs --input build/public-release-inputs --output build/public-release --commit "$GITHUB_SHA"
+      - name: Publish one immutable GitHub Release from the already-accepted bytes
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          published=0
+          cleanup() {
+            if [ "$published" = 0 ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true; fi
+          }
+          trap cleanup ERR
+          node --input-type=module - <<'NODE' > build/public-release/issue-2-release-evidence.md
+          import fs from 'node:fs';
+          const evidence=JSON.parse(fs.readFileSync('build/public-release/PUBLIC-RELEASE-EVIDENCE.json'));
+          console.log(`## Accepted public binary candidate ${evidence.release}`);
+          console.log('');
+          console.log(`Reviewed commit: \`${evidence.commit}\``);
+          console.log(`Release profile: \`${evidence.releaseProfileSha256}\``);
+          console.log('');
+          for(const item of evidence.targets) console.log(`- ${item.target}: \`${item.sha256}\` (${item.size} bytes)`);
+          console.log('');
+          console.log(`All four native receipts passed cross-version upgrade, native architecture, final-entrypoint transaction and zero-residue checks. The publication job is reusing these exact transferred bytes; it does not rebuild them.`);
+          NODE
+          gh issue comment 2 --repo "$GITHUB_REPOSITORY" --body-file build/public-release/issue-2-release-evidence.md
+          for target in win32-x64 darwin-arm64 darwin-x64 linux-x64; do
+            gh release delete-asset "$tag" "acceptance-$target.json" --repo "$GITHUB_REPOSITORY" --yes
+            gh release delete-asset "$tag" "redistribution-$target.json" --repo "$GITHUB_REPOSITORY" --yes
+          done
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+            build/public-release/SHA256SUMS build/public-release/PUBLIC-RELEASE-EVIDENCE.json
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets > build/public-release/github-assets.json
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto';
+          const assets=JSON.parse(fs.readFileSync('build/public-release/github-assets.json')).assets;
+          const files=fs.readdirSync('build/public-release').filter(n=>n!=='github-assets.json'&&!n.endsWith('.md'));
+          for(const name of files){const local='sha256:'+crypto.createHash('sha256').update(fs.readFileSync(path.join('build/public-release',name))).digest('hex');const remote=assets.find(a=>a.name===name);if(!remote||remote.digest!==local)throw Error(`GitHub asset digest mismatch: ${name}`)}
+          if(assets.length!==files.length)throw Error('GitHub Release contains unexpected assets');
+          NODE
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          published=1
+          if [ "$(gh issue view 2 --repo "$GITHUB_REPOSITORY" --json state --jq .state)" = OPEN ]; then
+            gh issue close 2 --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
+          trap - ERR
+
+  cleanup:
+    if: ${{ always() && needs.gate.result == 'success' && (needs.build.result != 'success' || needs.publish.result != 'success') }}
+    needs: [gate, build, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - name: Remove an unpublished Draft Release after any failed candidate run
+        run: |
+          tag="v$VERSION"
+          draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [ "$draft" = true ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag; fi
