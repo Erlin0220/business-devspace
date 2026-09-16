@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { downloadPinned, run } from './build-utils.mjs';
@@ -14,7 +14,11 @@ export async function scanInventory(directory, output) {
   const toolDirectory = resolve('build/audit-tools/syft');
   await rm(toolDirectory, { recursive: true, force: true });
   await mkdir(toolDirectory, { recursive: true });
-  await run('tar', ['-xf', resolve(archive), '-C', toolDirectory]);
+  // GitHub's Windows jobs run workflow shell steps through Git Bash. A bare
+  // `tar` there resolves to GNU tar, which interprets `D:\\...` as a remote
+  // host:path archive. Invoke the Windows inbox bsdtar by absolute path so
+  // drive-letter paths stay local. Unix runners use the native /usr/bin/tar.
+  await run(inventoryTarCommand(), ['-xf', resolve(archive), '-C', toolDirectory]);
   const syft = join(toolDirectory, process.platform === 'win32' ? 'syft.exe' : 'syft');
   await mkdir(dirname(resolve(output)), { recursive: true });
   // A directory scan defaults to dependency declarations (including omitted
@@ -39,6 +43,12 @@ export async function scanInventory(directory, output) {
     byType: Object.fromEntries([...new Set(summary.packages.map(item => item.type))].sort().map(type =>
       [type, summary.packages.filter(item => item.type === type).length])) }));
   return summary;
+}
+
+export function inventoryTarCommand(platform = process.platform, env = process.env) {
+  return platform === 'win32'
+    ? win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+    : '/usr/bin/tar';
 }
 
 export function inventoryPath(value) {
