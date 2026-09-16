@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_release:
-        description: 'Type the exact immutable tag to authorize publication, for example v0.2.7'
+        description: 'Type the exact immutable tag to authorize publication, for example v0.2.8'
         required: true
         type: string
 
