@@ -39,5 +39,5 @@ jobs:
           CF_RUNTIME_API_TOKEN: ${{ secrets.CF_RUNTIME_API_TOKEN }}
           ADMIN_ACCESS_EMAILS: ${{ secrets.ADMIN_ACCESS_EMAILS }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
-          MASTER_KEY: ${{ secrets.MASTER_KEY }}
+          MASTER_KEY_V2: ${{ secrets.MASTER_KEY_V2 }}
         run: npm run deploy -- --ci

@@ -40,6 +40,22 @@ export class KeyStore {
     return rows.results;
   }
 
+  async encryptedDeviceSecrets(limit = 200) {
+    const bounded = Math.min(Math.max(Number(limit) || 200, 1), 500);
+    const rows = await this.db.prepare(`SELECT id, binding_id, device_secret_hash, device_secret_box
+      FROM access_keys WHERE binding_id IS NOT NULL AND device_secret_hash IS NOT NULL
+      AND device_secret_box IS NOT NULL ORDER BY id LIMIT ?`).bind(bounded).all();
+    return rows.results;
+  }
+
+  async replaceDeviceSecretBox(id, bindingId, expectedBox, nextBox) {
+    const result = await this.db.prepare(`UPDATE access_keys SET device_secret_box = ?,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND binding_id = ? AND device_secret_box = ?`)
+      .bind(nextBox, id, bindingId, expectedBox).run();
+    return result.meta.changes === 1;
+  }
+
   async wasDeleted(id) {
     return Boolean(await this.db.prepare(`SELECT 1 FROM access_key_events
       WHERE key_id = ? AND event = 'deleted' LIMIT 1`).bind(id).first());

@@ -38,15 +38,20 @@ Access application is an explicit local operation, not part of CI deploy.
 
 Configure Variable `TEAM_DEVSPACE_RELEASE_PROFILE` (the public client profile
 JSON above). Configure Secrets `TEAM_DEVSPACE_DEPLOYMENT` (resource identity
-JSON), `ADMIN_ACCESS_EMAILS`, `CLOUDFLARE_DEPLOY_API_TOKEN`, `CF_RUNTIME_API_TOKEN`, `ADMIN_TOKEN`, `MASTER_KEY`
+JSON), `ADMIN_ACCESS_EMAILS`, `CLOUDFLARE_DEPLOY_API_TOKEN`, `CF_RUNTIME_API_TOKEN`, `ADMIN_TOKEN`, `MASTER_KEY_V2`
 and any existing platform-signing credentials in the `production` Environment.
 The update metadata private key belongs only to the separate `public-release`
 Environment as `TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM`; never put it in a profile,
 deployment Environment, download server or workstation-only default path.
 
-`MASTER_KEY` is not replaceable configuration: existing D1 enrollment ciphertexts
-depend on the exact value. Losing it requires device re-enrollment unless a tested
-dual-key migration is performed. Update-signing and platform-signing private keys
+The original `MASTER_KEY` was not replaceable configuration because existing D1
+enrollment ciphertexts depended on its exact value. The 2026-09 recovery therefore
+uses an explicit dual-key migration to `MASTER_KEY_V2`: the Worker accepts old
+ciphertext long enough to re-encrypt it under V2, verifies every plaintext against
+the retained device-secret hash, then retires the legacy key. `MASTER_KEY_V2` is the
+canonical production data-encryption root after that migration. Future rotation must
+repeat the same explicit compatibility procedure rather than overwrite it in place.
+Update-signing and platform-signing private keys
 also cannot be reconstructed from their public identity. Before deleting an old
 secret store or repository Environment, verify the primary copy and the independent
 recovery path described in `docs/ops/secret-disaster-recovery-2026-09-16.md`.
