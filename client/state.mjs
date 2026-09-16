@@ -12,6 +12,7 @@ const exec = promisify(execFile);
 export const installRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const DEVSPACE_VERSION = release.devspaceVersion;
 export const RELEASE_VERSION = release.version;
+export const GIT_PREREQUISITE_VERSION = release.gitPrerequisiteVersion;
 
 export function stateHome() {
   if (process.env.TEAM_DEVSPACE_HOME) return resolve(process.env.TEAM_DEVSPACE_HOME);

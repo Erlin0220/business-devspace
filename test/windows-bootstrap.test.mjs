@@ -126,11 +126,21 @@ test('Windows bootstrap parses in the 32-bit PowerShell 5 host used by NSIS', { 
     { cwd: process.cwd(), windowsHide: true, stdio: 'pipe' });
 });
 
-test('Windows Git fallback checks for a matching Git Bash, not git.exe alone', async () => {
+test('Windows Git prerequisite reuses matching Git Bash and otherwise acquires only the pinned official release', async () => {
   const script = await readFile('platform/windows/bootstrap.ps1', 'utf8');
-  assert.ok(script.includes('function Test-NeedGitFallback'));
+  assert.ok(script.includes('function Test-NeedGitPrerequisite'));
   assert.ok(script.includes("Join-Path $directory 'git.exe'"));
   assert.ok(script.includes("'bin\\bash.exe'"));
+  assert.ok(script.includes('function Install-GitPrerequisite'));
+  assert.ok(script.includes('git-for-windows-official-release'));
+  assert.ok(script.includes('Git prerequisite SHA-256 verification failed'));
+  assert.ok(script.includes('268435456'));
+  assert.match(script, /curl\.exe/);
+  assert.match(script, /--proto-redir '=https'/);
+  assert.doesNotMatch(script, /--retry-all-errors/,
+    'The Windows prerequisite downloader must remain compatible with older inbox curl builds');
+  assert.ok(script.includes('$activeRoot = if ($active)'));
+  assert.doesNotMatch(script, /git-fallback/);
   assert.ok(!script.includes('return -not (Get-Command git.exe -ErrorAction SilentlyContinue)'));
 });
 

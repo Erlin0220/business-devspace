@@ -2,7 +2,7 @@ import { cp, chmod, mkdir, readFile, readdir, rm, writeFile, access } from 'node
 import { dirname, join, resolve, delimiter } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHash } from 'node:crypto';
-import { downloadPinned, run, sha256File } from './build-utils.mjs';
+import { compareDottedVersions, downloadPinned, machOMinimumMacOS, run, sha256File } from './build-utils.mjs';
 import { buildReleaseLayout } from './distribution.mjs';
 import { dependencyFingerprint, pruneRuntime, RUNTIME_PROFILE } from './runtime-profile.mjs';
 import { buildWindowsLauncher } from './windows-launcher.mjs';
@@ -77,14 +77,13 @@ for (const entry of await readdir(bundle)) {
   if (values['reuse-dependencies'] && ['node_modules', '.dependency-fingerprint'].includes(entry)) continue;
   await rm(join(bundle, entry), { recursive: true, force: true });
 }
-await rm(join(cache, 'PortableGit'), { recursive: true, force: true });
 await mkdir(outputDirectory, { recursive: true });
 await mkdir(join(bundle, 'bin'), { recursive: true });
 const macosCloudflared = process.platform === 'darwin' ? process.env.TEAM_DEVSPACE_CLOUDFLARED_BINARY : undefined;
 if (process.platform === 'darwin' && !macosCloudflared) {
   throw new Error('macOS packaging requires TEAM_DEVSPACE_CLOUDFLARED_BINARY built from the pinned cloudflared source commit');
 }
-const downloadKinds = ['node', ...(process.platform === 'darwin' ? [] : ['cloudflared']), ...(process.platform === 'win32' ? ['git'] : [])];
+const downloadKinds = ['node', ...(process.platform === 'darwin' ? [] : ['cloudflared'])];
 const downloads = Object.fromEntries(await Promise.all(downloadKinds.map(async kind => [kind, await downloadPinned(binaries[kind][target], cache)])));
 const runtime = join(bundle, 'runtime');
 let trayBuild;
@@ -105,8 +104,6 @@ const unusedRuntimePaths = process.platform === 'win32'
 for (const path of unusedRuntimePaths) await rm(join(runtime, path), { recursive: true, force: true });
 if (process.platform === 'win32') {
   await cp(downloads.cloudflared, join(bundle, 'bin', 'cloudflared.exe'));
-  // Keep the pinned official PortableGit SFX intact. The isolated installer test
-  // extracts and executes it using the same code path employees use.
   await cp('platform/windows/command.cmd', join(bundle, 'bin', 'team-devspace.cmd'));
 } else if (process.platform === 'darwin') {
   await access(macosCloudflared);
@@ -240,6 +237,10 @@ const cloudflared = join(bundle, 'bin', process.platform === 'win32' ? 'cloudfla
 const cfVersion = (await run(cloudflared, ['--version'], { capture: true })).stdout;
 if (!cfVersion.includes(release.cloudflaredVersion)) throw new Error('Bundled cloudflared version differs from release pin');
 const cloudflaredSha256 = await sha256File(cloudflared);
+const cloudflaredMinimumMacOS = process.platform === 'darwin' ? await machOMinimumMacOS(cloudflared) : undefined;
+if (cloudflaredMinimumMacOS && compareDottedVersions(cloudflaredMinimumMacOS, release.distribution.macosMinimumVersion) > 0) {
+  throw new Error(`Bundled cloudflared requires macOS ${cloudflaredMinimumMacOS}, above release baseline ${release.distribution.macosMinimumVersion}`);
+}
 // The employee manifest describes installed runtime dependencies, not this
 // repository's build tools. This also lets npm inspect the real tree for SBOM
 // generation without reporting deliberately omitted devDependencies as missing.
@@ -267,8 +268,9 @@ await writeFile(join(bundle, 'THIRD-PARTY-NOTICES.txt'), [
   ...(trayBuild?.implementation === 'appkit' ? ['The macOS UI uses system AppKit/Foundation, with no third-party UI dependencies.'] : []),
   ...(trayBuild?.implementation === 'rust' ? ['The native tray dependency graph is recorded in Cargo.lock and sbom.cdx.json; original Cargo dependency license and notice files are retained in LICENSES/rust/.',
     'tray-icon 0.24.2: MIT OR Apache-2.0, https://github.com/tauri-apps/tray-icon'] : []),
-  ...(process.platform === 'win32' ? [`Git for Windows ${release.gitFallbackVersion}: GPL-2.0 and bundled component licenses retained under git/.`,
-    `Corresponding sources and redistribution notices: https://github.com/git-for-windows/git/releases/tag/v${release.gitFallbackVersion}`] : []),
+  ...(process.platform === 'win32' ? [
+    `Git for Windows ${release.gitPrerequisiteVersion} is an external prerequisite acquired directly from the official Git for Windows release only when Git Bash is unavailable; it is not included in Team DevSpace release bytes.`,
+  ] : []),
   'This distribution does not grant a license to employee project files or credentials.', '',
 ].join('\n'));
 if (process.platform === 'win32') {
@@ -282,11 +284,15 @@ await writeFile(join(bundle, 'release-provenance.json'), JSON.stringify({
   releaseProfileSha256: releaseProfileDigest(release),
   release: release.version, target, upstream: { package: '@waishnav/devspace', version: installed.version },
   binaries: Object.fromEntries(downloadKinds.map(kind => [kind, binaries[kind][target]])), lockSha256,
+  ...(target === 'win32-x64' ? { externalPrerequisites: { gitBash: {
+    version: release.gitPrerequisiteVersion, source: 'git-for-windows-official-release', ...binaries.git[target],
+  } } } : {}),
   dependencyFingerprint: fingerprint, dependencyInstallProfile, npmVersion,
   ...(process.platform === 'darwin' ? { cloudflaredBuild: {
     version: release.cloudflaredVersion, sourceCommit: release.cloudflaredSourceCommit,
     goVersion: release.cloudflaredGoVersion, minimumMacOS: release.distribution.macosMinimumVersion,
-    sha256: cloudflaredSha256, reusedFromBuildCache: process.env.TEAM_DEVSPACE_CLOUDFLARED_CACHE_HIT === '1',
+    machoMinimumMacOS: cloudflaredMinimumMacOS, sha256: cloudflaredSha256,
+    reusedFromBuildCache: process.env.TEAM_DEVSPACE_CLOUDFLARED_CACHE_HIT === '1',
   } } : {}),
   ...(trayBuild ? { tray: { implementation: trayBuild.implementation,
     ...(trayBuild.implementation === 'rust' ? {
@@ -300,7 +306,8 @@ await writeFile(join(bundle, 'release-provenance.json'), JSON.stringify({
 }, null, 2));
 console.log(JSON.stringify({ prepared: true, target, bundle, devspace: installed.version, node: version }));
 if (!values['prepare-only']) {
-  const distribution = await buildReleaseLayout({ bundle, target, release, tar, outputDirectory, gitFallbackArchive: downloads.git });
+  const distribution = await buildReleaseLayout({ bundle, target, release, tar, outputDirectory,
+    ...(target === 'win32-x64' ? { gitPrerequisite: binaries.git[target] } : {}) });
   let artifact;
   if (process.platform === 'win32') {
     const nsisZip = await downloadPinned(binaries.nsis, cache);

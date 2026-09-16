@@ -82,6 +82,20 @@ test('the original PolyForm text and upstream licenses remain in the packaging a
   assert.match(await readFile('LICENSES/cloudflared-LICENSE.txt', 'utf8'), /Apache License/);
 });
 
+test('Windows public release bytes exclude Git for Windows while retaining a pinned official prerequisite contract', async () => {
+  const [distribution, bootstrap, readme] = await Promise.all([
+    readFile('scripts/distribution.mjs', 'utf8'),
+    readFile('platform/windows/bootstrap.ps1', 'utf8'),
+    readFile('README.md', 'utf8'),
+  ]);
+  assert.match(distribution, /externalPrerequisites/);
+  assert.match(distribution, /git-for-windows-official-release/);
+  assert.doesNotMatch(distribution, /name:\s*'git-fallback'/);
+  assert.match(bootstrap, /--proto-redir '=https'/);
+  assert.match(bootstrap, /Git prerequisite SHA-256 verification failed/);
+  assert.match(readme, /Git 本身不进入 Team DevSpace 的公开发行字节/);
+});
+
 test('superseded Codemagic and Intel handoff entrypoints stay retired', async () => {
   for (const path of ['codemagic.yaml', '.github/workflows/accept-codemagic-intel.yml',
     'scripts/codemagic.mjs', 'scripts/macos-accept-existing.mjs', 'test/codemagic.test.mjs', 'docs/ops/codemagic-api.md']) {

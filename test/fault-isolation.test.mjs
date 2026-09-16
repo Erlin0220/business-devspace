@@ -38,6 +38,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MAC_DIAGNOSTIC_LAUNCH, serviceAction } from '../client/platform.mjs';
+import { testBash } from './test-bash.mjs';
+const bash = testBash();
 test('ordinary desktop reopening may degrade a tray start failure but never a core start failure',
   { skip: !['win32', 'darwin'].includes(process.platform) }, async () => {
   const state = { ownerToken: 'a'.repeat(43), deviceId: randomUUID(), ports: { devspace: 0, bridge: 0, metrics: 0 } };
@@ -88,7 +90,7 @@ test('macOS diagnostics wrapper falls back before exec but never reruns a failed
   t.after(() => rm(work, { recursive: true, force: true }));
   for (const blocked of [false, true]) {
     const cwd = join(work, String(blocked)); await mkdir(cwd);
-    await assert.rejects(promisify(execFile)('bash', ['-c', MAC_DIAGNOSTIC_LAUNCH, 'test-launch',
+    await assert.rejects(promisify(execFile)(bash, ['-c', MAC_DIAGNOSTIC_LAUNCH, 'test-launch',
       '/bin/sh', '-c', "printf 'run\n' >> proof; printf out; printf err >&2; exit 7"], {
       cwd, timeout: 10000, env: { ...process.env, NODE_OPTIONS: '',
         TEAM_DEVSPACE_STDOUT: blocked ? '.' : 'stdout.log', TEAM_DEVSPACE_STDERR: blocked ? '.' : 'stderr.log' },

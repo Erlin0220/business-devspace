@@ -6,6 +6,9 @@ import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { DOWNLOAD_TARGETS, ALIASES, packageName, httpsOrigin, validateCatalog, downloadPage } from '../scripts/download-catalog.mjs';
 import { buildDownloadCatalog, prepareSite, prepareHomepage, main, retainedReleaseVersions } from '../scripts/publish-downloads.mjs';
+import { testBash } from './test-bash.mjs';
+
+const bash = testBash();
 
 test('release cleanup retains cold-cache upgrade fixtures independently of rollout policy', () => {
   const retained = retainedReleaseVersions('0.2.6', { auto: '0.2.5', minimumSupported: null });
@@ -87,8 +90,8 @@ test('stable scripts pin immutable package URLs and hashes, with no enrollment o
   assert.ok(!renderAdmin([]).includes('issue-downloads'));
   assert.match(serverScript, /@entry path [^\n]*\/update\.json/,
     'Stable signed update metadata must be reachable from /update.json');
-  assert.equal(spawnSync('bash', ['-n', join(f.site, 'install.sh').replaceAll('\\', '/')]).status, 0);
-  assert.equal(spawnSync('bash', ['-n', resolve('scripts/download-server.sh').replaceAll('\\', '/')]).status, 0);
+  assert.equal(spawnSync(bash, ['-n', join(f.site, 'install.sh').replaceAll('\\', '/')]).status, 0);
+  assert.equal(spawnSync(bash, ['-n', resolve('scripts/download-server.sh').replaceAll('\\', '/')]).status, 0);
   if (process.platform === 'win32') {
     const file = join(f.site, 'install.ps1').replaceAll("'", "''");
     const parsed = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
@@ -178,7 +181,7 @@ test('server publication is immutable, all-or-nothing, CAS guarded and genuinely
   const second = await fixture(t, '1.0.1');
   const server = join(first.root, 'server');
   const script = resolve('scripts/download-server.sh');
-  const run = (action, version = '', stage = '') => execFileSync('bash', [script, server, action, version, stage], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const run = (action, version = '', stage = '') => execFileSync(bash, [script, server, action, version, stage], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   run('prepare');
   const siteId = 'a'.repeat(32);
   const homepage = join(first.root, 'homepage');

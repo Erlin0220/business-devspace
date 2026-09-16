@@ -5,8 +5,10 @@ import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { testBash } from './test-bash.mjs';
 
 const exec = promisify(execFile);
+const bash = testBash();
 const launch = await readFile('platform/macos/launch-app.sh', 'utf8');
 const bootstrap = await readFile('platform/unix/bootstrap.sh', 'utf8');
 const preinstall = await readFile('platform/macos/preinstall', 'utf8');
@@ -17,7 +19,7 @@ const rollbackCode = bootstrap.slice(rollbackStart, bootstrap.indexOf('\nif [ "$
 async function shell(t, code) {
   const cwd = await mkdtemp(join(tmpdir(), 'tds-macos-startup-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  return exec('bash', ['-c', `set -eu\n${code}`], { cwd, timeout: 10000, env: { ...process.env, NODE_OPTIONS: '' } });
+  return exec(bash, ['-c', `set -eu\n${code}`], { cwd, timeout: 10000, env: { ...process.env, NODE_OPTIONS: '' } });
 }
 
 test('macOS package and payload guards allow Intel on Apple Silicon only with working Rosetta', async t => {
@@ -136,7 +138,7 @@ test('reopening an installed but unconfigured macOS payload shows setup without 
   await writeFile(join(current, 'client', 'cli.mjs'), '');
   await writeFile(join(current, 'runtime', 'bin', 'node'), '#!/bin/sh\n[ "$2" = setup-gui ] || exit 8\nprintf "setup-reopened\\n"\n', { mode: 0o755 });
   // Use the shell's own path representation so Git Bash and POSIX hosts both run this test.
-  await exec('bash', ['-c', `set -eu
+  await exec(bash, ['-c', `set -eu
 export HOME="$PWD/home"
 D="$HOME/Library/Application Support/TeamDevSpace/distribution"
 printf '%s\\n' "$D/versions/unconfigured" > "$D/active-path"
@@ -171,7 +173,7 @@ test('reopening a configured macOS payload reuses healthy startup even when its 
       'printf "%s\\n" "$D/versions/configured" > "$D/active-path"',
       '/bin/sh "$PWD/Team DevSpace.app/Contents/MacOS/TeamDevSpace"',
     ].join('\n');
-    await exec('bash', ['-c', script], { cwd, timeout: 10000, env: { ...process.env, NODE_OPTIONS: '' } });
+    await exec(bash, ['-c', script], { cwd, timeout: 10000, env: { ...process.env, NODE_OPTIONS: '' } });
     assert.equal(await readFile(join(home, 'proof'), 'utf8'), 'start-once\n');
   }
 });

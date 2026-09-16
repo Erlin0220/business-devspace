@@ -74,7 +74,7 @@ test('installed payload verification rejects a foreign manifest and altered nati
   const bundle = join(root, `build/bundle-${target}`);
   for (const path of [directory, join(installed, 'runtime/bin'), join(bundle, 'runtime/bin')]) await mkdir(path, { recursive: true });
   const manifest = JSON.stringify({ schema: 1, trust: 'bootstrap-embedded-manifest', release: release.version,
-    target, installMode: 'offline', components: [] });
+    target, installMode: 'embedded-components', components: [] });
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
   await writeFile(join(directory, 'manifest.json'), manifest);
   await writeFile(join(directory, 'manifest.json.sha256'), hash(manifest));

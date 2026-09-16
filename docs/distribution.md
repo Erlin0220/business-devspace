@@ -9,10 +9,13 @@ anchor. Never stage production inputs by modifying tracked files.
 ## Components
 
 Every enabled target has `app`, `devspace-runtime`, `node` and `cloudflared`
-content-addressed components. Windows also has the conditional, unmodified
-official PortableGit self-extractor. Component hashes/sizes are embedded in
-the final EXE, PKG or Linux archive through the installer manifest. Employees
-do not fetch runtime dependencies or build native modules during installation.
+content-addressed components. Component hashes/sizes are embedded in the final
+EXE, PKG or Linux archive through the installer manifest. Windows does **not**
+embed Git for Windows: the manifest records one pinned external `gitBash`
+prerequisite. The bootstrap reuses an existing Git Bash when available;
+otherwise it acquires the exact official Git for Windows asset from GitHub,
+enforces a size bound and verifies SHA-256 before use. Employees do not run npm
+or build native modules during installation.
 
 The app component includes LICENSE, NOTICE and LICENSES. Upstream npm/runtime
 licenses remain in their packages. Source maps and TypeScript declarations
@@ -30,7 +33,9 @@ The manual GitHub Actions matrix uses `windows-2022`, `ubuntu-24.04`,
 `macos-15` ARM64 and `macos-15-intel`. Each runner builds its own native
 dependencies and final installer. Do not cross-copy PTY/SQLite modules or
 rebuild a different package after acceptance. macOS cloudflared uses the
-existing pinned upstream source/Go inputs on matching hardware.
+existing pinned upstream source/Go inputs on matching hardware. The resulting
+Mach-O is inspected after build and release verification must prove its declared
+minimum macOS version is not above the configured product baseline.
 
 Sample candidates are labeled `SAMPLE-NOT-FOR-EMPLOYEES`. Public native CI uses
 only this edition and retains acceptance receipts, never installer bytes or a

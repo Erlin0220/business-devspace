@@ -6,6 +6,7 @@ import { httpsOrigin } from './download-catalog.mjs';
 const SHA256 = /^[a-f0-9]{64}$/;
 const TARGET = /^(win32|darwin|linux)-(x64|arm64)$/;
 const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
+const GIT_FOR_WINDOWS_VERSION = /^\d+\.\d+\.\d+\.windows\.\d+$/;
 
 export function validateDistributionConfig(release) {
   const distribution = release?.distribution;
@@ -32,6 +33,29 @@ export function validateDistributionConfig(release) {
   return distribution;
 }
 
+export function validateWindowsGitPrerequisite(release, pin) {
+  if (!GIT_FOR_WINDOWS_VERSION.test(release?.gitPrerequisiteVersion ?? '')) {
+    throw new Error('Windows Git prerequisite version must be an explicit Git for Windows release');
+  }
+  if (!pin || typeof pin.url !== 'string' || !SHA256.test(pin.sha256 ?? '')) {
+    throw new Error('Windows Git prerequisite requires an exact official URL and SHA-256');
+  }
+  const url = new URL(pin.url);
+  const releasePrefix = `/git-for-windows/git/releases/download/v${release.gitPrerequisiteVersion}/`;
+  if (url.protocol !== 'https:' || url.username || url.password || url.origin !== 'https://github.com' ||
+      url.search || url.hash || !url.pathname.startsWith(releasePrefix) ||
+      !/^PortableGit-[A-Za-z0-9._-]+-64-bit\.7z\.exe$/.test(url.pathname.slice(releasePrefix.length))) {
+    throw new Error('Windows Git prerequisite must point at the pinned official Git for Windows PortableGit release');
+  }
+  return {
+    source: 'git-for-windows-official-release',
+    condition: 'git-bash-unavailable',
+    version: release.gitPrerequisiteVersion,
+    url: url.href,
+    sha256: pin.sha256,
+  };
+}
+
 async function componentArchive({ name, version, bundle, paths, tar, staging, layout, required = true, condition, exclude = [] }) {
   if (!Array.isArray(paths) || paths.length === 0) throw new Error(`Component ${name} has no payload paths`);
   const temporary = join(staging, `${name}.tar.gz`);
@@ -44,25 +68,28 @@ async function componentArchive({ name, version, bundle, paths, tar, staging, la
   return componentArtifact({ name, version, archive: temporary, layout, required, condition });
 }
 
-async function componentArtifact({ name, version, archive, layout, required = true, condition, format = 'tar.gz' }) {
+async function componentArtifact({ name, version, archive, layout, required = true, condition }) {
   const sha256 = await sha256File(archive);
   if (!SHA256.test(sha256)) throw new Error(`Component ${name} did not produce a SHA-256 digest`);
   const size = (await stat(archive)).size;
-  const filename = `${name}.${format === '7z-sfx' ? '7z.exe' : 'tar.gz'}`;
+  const filename = `${name}.tar.gz`;
   const relativePath = `objects/sha256/${sha256}/${filename}`;
   const destination = join(layout, ...relativePath.split('/'));
   await mkdir(dirname(destination), { recursive: true });
   await cp(archive, destination);
   return {
     name, version, required, ...(condition ? { condition } : {}),
-    format, path: relativePath, sha256, size,
+    format: 'tar.gz', path: relativePath, sha256, size,
   };
 }
 
-export async function buildReleaseLayout({ bundle, target, release, tar, outputDirectory = 'release', gitFallbackArchive }) {
+export async function buildReleaseLayout({ bundle, target, release, tar, outputDirectory = 'release', gitPrerequisite }) {
   if (!TARGET.test(target)) throw new Error(`Unsupported release target: ${target}`);
   const distribution = validateDistributionConfig(release);
   if (!distribution.targets.includes(target)) throw new Error(`Target ${target} is not enabled in release.config.json`);
+  const externalPrerequisites = target === 'win32-x64'
+    ? { gitBash: validateWindowsGitPrerequisite(release, gitPrerequisite) }
+    : {};
   const root = resolve(outputDirectory);
   const layout = join(root, 'offline', release.version, target);
   const staging = join(layout, '.staging');
@@ -89,24 +116,18 @@ export async function buildReleaseLayout({ bundle, target, release, tar, outputD
     await componentArchive({ name: 'cloudflared', version: release.cloudflaredVersion, bundle,
       paths: [cloudflaredPath], tar, staging, layout }),
   ];
-  if (target === 'win32-x64') {
-    if (!gitFallbackArchive) throw new Error('Windows requires the pinned official PortableGit self-extractor');
-    components.push(await componentArtifact({ name: 'git-fallback', version: release.gitFallbackVersion,
-      archive: gitFallbackArchive, layout, format: '7z-sfx', required: false, condition: 'git-unavailable' }));
-  }
-
   const manifest = {
     schema: 1,
     trust: 'bootstrap-embedded-manifest',
     release: release.version,
     target,
-    installMode: 'offline',
+    installMode: 'embedded-components',
     runtime: {
       devspaceVersion: release.devspaceVersion,
       nodeVersion: release.nodeVersion,
       cloudflaredVersion: release.cloudflaredVersion,
-      ...(target === 'win32-x64' ? { gitFallbackVersion: release.gitFallbackVersion } : {}),
     },
+    externalPrerequisites,
     components,
   };
   const manifestPath = join(layout, 'manifest.json');

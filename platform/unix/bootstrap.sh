@@ -340,7 +340,7 @@ if [ "$TARGET" = darwin-arm64 ] && [ "$manifest_target" = darwin-x64 ] &&
   echo "Release manifest target ${manifest_target:-missing} does not match detected platform $TARGET (kernel=$SYSTEM_NAME-$KERNEL_ARCH, machine=$MACHINE_ARCH)." >&2; exit 2;
 }
 case "$release" in ''|*[!0-9A-Za-z.-]*) echo 'Invalid fixed release version.' >&2; exit 2 ;; esac
-[ "$install_mode" = offline ] || { echo 'This bootstrap only accepts the offline release contract.' >&2; exit 2; }
+[ "$install_mode" = embedded-components ] || { echo 'This bootstrap only accepts the embedded-component release contract.' >&2; exit 2; }
 if [ -z "$OFFLINE_ROOT" ]; then
   OFFLINE_ROOT=$(CDPATH= cd -- "$(dirname -- "$MANIFEST")" && pwd)
 fi
