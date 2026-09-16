@@ -125,12 +125,13 @@ if (values['dry-run']) {
   const generatedFile = join(directory, 'wrangler.generated.json');
   await atomicJson(generatedFile, generated);
   const adminFile = values.ci ? null : join(directory, 'admin.json');
-  let admin = values.ci ? { gateway, adminToken: process.env.ADMIN_TOKEN, masterKey: process.env.MASTER_KEY }
+  let admin = values.ci ? { gateway, adminToken: process.env.ADMIN_TOKEN, masterKeyV2: process.env.MASTER_KEY_V2 }
     : await readJson(adminFile, null);
   if (admin && admin.gateway !== gateway) throw new Error('Existing administrator state belongs to a different gateway');
-  if (!admin) { admin = { gateway, adminToken: randomSecret(), masterKey: randomSecret() }; await atomicJson(adminFile, admin); }
-  if (![admin.adminToken, admin.masterKey, config.runtimeToken].every(value => typeof value === 'string' && value.length >= 32)) {
-    throw new Error('ADMIN_TOKEN, MASTER_KEY and CF_RUNTIME_API_TOKEN must come from the protected CI environment');
+  if (admin?.masterKey && !admin.masterKeyV2) admin.masterKeyV2 = admin.masterKey;
+  if (!admin) { admin = { gateway, adminToken: randomSecret(), masterKeyV2: randomSecret() }; await atomicJson(adminFile, admin); }
+  if (![admin.adminToken, admin.masterKeyV2, config.runtimeToken].every(value => typeof value === 'string' && value.length >= 32)) {
+    throw new Error('ADMIN_TOKEN, MASTER_KEY_V2 and CF_RUNTIME_API_TOKEN must come from the protected CI environment');
   }
   // Read-only scope preflight catches expired/wrong-account runtime tokens. It
   // does not pretend to prove edit permissions: real enrollment remains an E2E gate.
@@ -167,7 +168,7 @@ if (values['dry-run']) {
     return { count: rows.length, sha256: createHash('sha256').update(JSON.stringify(rows)).digest('hex') };
   };
   const secretsFile = join(directory, 'worker-secrets.json');
-  await atomicJson(secretsFile, { ADMIN_TOKEN: admin.adminToken, MASTER_KEY: admin.masterKey, CF_API_TOKEN: config.runtimeToken });
+  await atomicJson(secretsFile, { ADMIN_TOKEN: admin.adminToken, MASTER_KEY_V2: admin.masterKeyV2, CF_API_TOKEN: config.runtimeToken });
   try {
     // Migrations must remain backward compatible with the previous release.
     // Worker version recovery cannot undo D1 schema/data changes.

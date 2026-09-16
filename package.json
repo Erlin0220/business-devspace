@@ -33,6 +33,7 @@
     "downloads:site": "node scripts/publish-downloads.mjs --site-only",
     "downloads:preview": "node scripts/publish-downloads.mjs --preview",
     "update-key:provision": "node scripts/provision-update-signing-key.mjs",
+    "master-key-v2:provision": "node scripts/provision-master-key-v2.mjs",
     "acceptance:platform": "node scripts/platform-acceptance.mjs",
     "acceptance:local": "npm run check && npm test && npm run test:distribution && npm run deploy -- --dry-run && npm run package -- --reuse-dependencies && npm run acceptance:platform",
     "acceptance:linux:wsl": "pwsh -NoProfile -File scripts/linux-wsl.ps1",

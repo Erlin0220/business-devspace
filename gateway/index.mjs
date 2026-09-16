@@ -106,7 +106,7 @@ async function enroll(request, env, store) {
     const bindingId = crypto.randomUUID();
     row = await store.bind(row.id, {
       deviceId: body.deviceId, deviceSecretHash: deviceHash,
-      deviceSecretBox: await seal(body.deviceSecret, env.MASTER_KEY, bindingId),
+      deviceSecretBox: await seal(body.deviceSecret, env.MASTER_KEY_V2 ?? env.MASTER_KEY, bindingId),
       bindingId, bridgePort: body.bridgePort,
     });
   }
@@ -134,6 +134,16 @@ async function enroll(request, env, store) {
     hostname: row.hostname, tunnelToken: configured.tunnelToken,
     endpoint: `${publicOrigin(env)}/mcp`, devspaceVersion: env.DEVSPACE_VERSION, controlApiVersion,
     state: row.state === 'suspended' ? 'suspended' : 'active' });
+}
+
+async function openDeviceSecret(row, env) {
+  const primary = env.MASTER_KEY_V2 ?? env.MASTER_KEY;
+  if (!primary) throw new Error('MASTER_KEY is not configured');
+  try { return await unseal(row.device_secret_box, primary, row.binding_id); }
+  catch (error) {
+    if (!env.MASTER_KEY_V2 || !env.MASTER_KEY) throw error;
+    return unseal(row.device_secret_box, env.MASTER_KEY, row.binding_id);
+  }
 }
 
 function publicOrigin(env) {
@@ -275,7 +285,7 @@ async function proxyMcp(request, env, store) {
     if (!session.startsWith(prefix) || session.length > 512) throw new HttpError(404, 'mcp_session_invalid');
     headers.set('mcp-session-id', session.slice(prefix.length));
   }
-  headers.set('Authorization', `Bearer ${await unseal(row.device_secret_box, env.MASTER_KEY, row.binding_id)}`);
+  headers.set('Authorization', `Bearer ${await openDeviceSecret(row, env)}`);
   headers.set('X-Team-Binding-Id', row.binding_id);
   headers.set('Cache-Control', 'no-store');
   let upstream;
@@ -330,6 +340,37 @@ export async function reconcileCleanup(env, dependencies = {}) {
     }
   }
   if (completed) console.info(JSON.stringify({ event: 'cleanup_reconciled', completed }));
+}
+
+export async function reconcileMasterKeyRotation(env, dependencies = {}) {
+  if (!env.MASTER_KEY_V2) return { enabled: false, scanned: 0, migrated: 0, alreadyCurrent: 0, failed: 0 };
+  if (!env.MASTER_KEY) return { enabled: false, currentOnly: true, scanned: 0, migrated: 0, alreadyCurrent: 0, failed: 0 };
+  const store = dependencies.store ?? new KeyStore(env.DB);
+  const rows = await store.encryptedDeviceSecrets();
+  let migrated = 0;
+  let alreadyCurrent = 0;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      let plain;
+      try {
+        plain = await unseal(row.device_secret_box, env.MASTER_KEY_V2, row.binding_id);
+        if (!equalSecret(await sha256(plain), row.device_secret_hash)) throw new Error('credential hash mismatch');
+        alreadyCurrent++;
+        continue;
+      } catch {
+        plain = await unseal(row.device_secret_box, env.MASTER_KEY, row.binding_id);
+      }
+      if (!equalSecret(await sha256(plain), row.device_secret_hash)) throw new Error('credential hash mismatch');
+      const next = await seal(plain, env.MASTER_KEY_V2, row.binding_id);
+      if (await store.replaceDeviceSecretBox(row.id, row.binding_id, row.device_secret_box, next)) migrated++;
+    } catch {
+      failed++;
+    }
+  }
+  const status = { enabled: true, scanned: rows.length, migrated, alreadyCurrent, failed };
+  if (migrated || failed) console.info(JSON.stringify({ event: 'master_key_rotation', ...status }));
+  return status;
 }
 
 // Return only internal enum values. Never log dynamic paths, labels or IDs.
@@ -433,6 +474,6 @@ export default {
     return response;
   },
   scheduled(controller, env, ctx) {
-    ctx.waitUntil(reconcileCleanup(env));
+    ctx.waitUntil(Promise.all([reconcileCleanup(env), reconcileMasterKeyRotation(env)]));
   },
 };

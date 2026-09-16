@@ -29,7 +29,7 @@ local copy, while recovery was advisory instead of an enforced release prerequis
 | Secret / identity | Normal primary store | Same identity reconstructible after total loss? | Safe recovery |
 | --- | --- | --- | --- |
 | Update Ed25519 release private key | GitHub `public-release` Environment | No | Use verified recovery copy, or execute an explicit client trust-root migration. Never replace it in place. |
-| `MASTER_KEY` | GitHub `production` Environment + Worker secret | No | Preserve exact value. Rotation requires compatibility with old ciphertext, full D1 re-encryption and verification before old key retirement. Without it, reset/re-enroll affected devices. |
+| `MASTER_KEY_V2` | GitHub `production` Environment + Worker secret + protected recovery copy | No | Preserve exact value. Rotation requires compatibility with old ciphertext, full D1 re-encryption and verification before old key retirement. Without a usable key, reset/re-enroll affected devices. |
 | Windows internal-signing PFX | Protected GitHub Environment while identity remains in use | No | Restore protected PFX backup or deliberately introduce a new publisher identity/trust procedure. Public releases currently do not depend on this internal signature. |
 | macOS signing/notary credentials | Protected CI Environment when enabled | Apple/provider replacement rules apply | Revoke/reissue through Apple and update CI. Current internal-free distribution is unsigned/unnotarized. |
 | `ADMIN_TOKEN` | GitHub `production` Environment + Worker secret | No need to reconstruct | Generate a new token and deploy both administrator configuration and Worker consistently. |
@@ -45,7 +45,7 @@ local copy, while recovery was advisory instead of an enforced release prerequis
 1. `public-release` owns update-signing material and only the final metadata-signing
    step receives it. Native build/acceptance jobs never receive the private key.
 2. `production` owns Cloudflare deployment/runtime credentials, `ADMIN_TOKEN`, the
-   exact existing `MASTER_KEY`, resource identity JSON and any platform-signing
+   active `MASTER_KEY_V2`, resource identity JSON and any platform-signing
    identity still intentionally used.
 3. Release profiles contain only public client-visible endpoints/public keys.
 4. Aliyun/Caddy holds immutable public release bytes and already-signed metadata;
@@ -64,6 +64,18 @@ It writes the daily key to `business-devspace:public-release` and a recovery cop
 the archived private repository's `recovery` Environment, while printing only the
 new public key. Creating this key is a trust-root change and must not be used for a
 normal release or to overwrite an existing client trust root.
+
+The D1 encryption-root recovery follows the same no-disk rule but is a data migration,
+not an in-place replacement:
+
+```sh
+npm run master-key-v2:provision -- --confirm ROTATE-D1-MASTER-KEY
+```
+
+This creates `MASTER_KEY_V2` in the deployed Worker, `business-devspace:production`,
+and the archived private repository's `recovery` Environment. Production code must
+run in dual-key mode until every retained `device_secret_box` has been verified and
+re-encrypted under V2. Only then may the legacy Worker `MASTER_KEY` be deleted.
 
 ## Change checklist
 

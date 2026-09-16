@@ -26,6 +26,7 @@ const deployWorkflow = await readFile('.github/workflows/deploy.yml', 'utf8');
 const publicReleaseWorkflow = await readFile('.github/workflows/public-release.yml', 'utf8');
 const updateSigning = await readFile('scripts/sign-updates.mjs', 'utf8');
 const updateKeyProvisioning = await readFile('scripts/provision-update-signing-key.mjs', 'utf8');
+const masterKeyProvisioning = await readFile('scripts/provision-master-key-v2.mjs', 'utf8');
 const binaries = JSON.parse(await readFile('scripts/binaries.json', 'utf8'));
 const windowsSigning = await readFile('scripts/sign-internal-windows.ps1', 'utf8');
 const windowsPlatformFiles = await readdir('platform/windows');
@@ -117,6 +118,13 @@ if (/homedir\(|defaultSigningKey|\.team-devspace-admin/.test(updateSigning) ||
 if (!updateKeyProvisioning.includes("privateKeyWrittenToDisk: false") ||
     /writeFile|appendFile|createWriteStream/.test(updateKeyProvisioning)) {
   throw new Error('Update-key provisioning must keep the private key in memory and write only protected GitHub Secrets');
+}
+if (!deployWorkflow.includes('secrets.MASTER_KEY_V2') || deployWorkflow.includes('secrets.MASTER_KEY }}')) {
+  throw new Error('Production deployment must use the migrated MASTER_KEY_V2 secret, never silently revive the legacy D1 root');
+}
+if (!masterKeyProvisioning.includes("privateValueWrittenToDisk: false") ||
+    /writeFile|appendFile|createWriteStream/.test(masterKeyProvisioning)) {
+  throw new Error('MASTER_KEY_V2 provisioning must keep the encryption root in memory and write only protected secret stores');
 }
 
 if (!picoLicense.includes('MIT License')) throw new Error('Vendored Pico CSS must keep its MIT license');

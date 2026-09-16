@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { build } from 'esbuild';
 import { Miniflare, Log, LogLevel } from 'miniflare';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { reconcileCleanup, requestOperation } from '../gateway/index.mjs';
+import { reconcileCleanup, reconcileMasterKeyRotation, requestOperation } from '../gateway/index.mjs';
 import { KeyStore } from '../gateway/store.mjs';
 import release from '../release.config.json' with { type: 'json' };
 import { signUpdateFixture, updateTestCatalog, updateTestPublicKey } from './update-fixture.mjs';
@@ -36,6 +36,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 
 async function fixture(t, { inventoryMigration = true } = {}) {
   const adminToken = secret();
+  const masterKey = secret();
   const tunnels = new Map();
   const records = new Map();
   const forwarded = [];
@@ -56,7 +57,7 @@ async function fixture(t, { inventoryMigration = true } = {}) {
       }
       return new Response('Not found', { status: 404 });
     } },
-    bindings: { ADMIN_TOKEN: adminToken, MASTER_KEY: secret(), CF_API_TOKEN: secret(),
+    bindings: { ADMIN_TOKEN: adminToken, MASTER_KEY: masterKey, CF_API_TOKEN: secret(),
       CF_ACCOUNT_ID: 'a'.repeat(32), CF_ZONE_ID: 'b'.repeat(32), DEVICE_DOMAIN: 'example.test',
       PUBLIC_ORIGIN: 'https://team.example.test', RELEASE_VERSION: '0.1.0', DEVSPACE_VERSION: '1.0.8', CONTROL_API_VERSION: '1',
       ACCESS_TEAM_DOMAIN: ACCESS_ISSUER, ACCESS_AUD },
@@ -160,7 +161,7 @@ async function fixture(t, { inventoryMigration = true } = {}) {
     return { id, accessKey };
   }
   function device() { return { deviceId: randomUUID(), deviceSecret: secret(), bridgePort: 47671 }; }
-  return { mf, db, request, issue, device, adminToken, tunnels, records, forwarded, apiTrace, metadataTrace, switches, accessHeaders };
+  return { mf, db, request, issue, device, adminToken, masterKey, tunnels, records, forwarded, apiTrace, metadataTrace, switches, accessHeaders };
 }
 
 test('stable discovery verifies signatures, coalesces reads, and permits only legacy unsigned manual recovery', async t => {
@@ -180,6 +181,23 @@ test('stable discovery verifies signatures, coalesces reads, and permits only le
   old.switches.missingStableSignature = true; old.switches.legacyStable = true;
   const legacy = await old.mf.dispatchFetch('https://team.example.test/v1/update-policy');
   assert.equal(legacy.status, 200); assert.equal((await legacy.json()).stable, '0.2.3');
+});
+
+test('MASTER_KEY rotation re-encrypts retained device credentials without changing device identity', async t => {
+  const f = await fixture(t), key = await f.issue('Rotating device'), device = f.device();
+  const enrolled = await f.request('/v1/enroll', key.accessKey, device);
+  assert.equal(enrolled.status, 200);
+  const before = await f.db.prepare('SELECT * FROM access_keys WHERE id = ?').bind(key.id).first();
+  const nextMasterKey = secret();
+  const store = new KeyStore(f.db);
+  const first = await reconcileMasterKeyRotation({ MASTER_KEY: f.masterKey, MASTER_KEY_V2: nextMasterKey }, { store });
+  assert.deepEqual(first, { enabled: true, scanned: 1, migrated: 1, alreadyCurrent: 0, failed: 0 });
+  const after = await f.db.prepare('SELECT * FROM access_keys WHERE id = ?').bind(key.id).first();
+  assert.notEqual(after.device_secret_box, before.device_secret_box);
+  assert.equal(after.binding_id, before.binding_id);
+  assert.equal(after.device_secret_hash, before.device_secret_hash);
+  const second = await reconcileMasterKeyRotation({ MASTER_KEY: f.masterKey, MASTER_KEY_V2: nextMasterKey }, { store });
+  assert.deepEqual(second, { enabled: true, scanned: 1, migrated: 0, alreadyCurrent: 1, failed: 0 });
 });
 
 test('authenticated update drain is not misreported as offline and cannot leak upstream diagnostics', async t => {
