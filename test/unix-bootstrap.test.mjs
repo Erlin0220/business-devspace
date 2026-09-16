@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
+import { testBash } from './test-bash.mjs';
 
 const exec = promisify(execFile);
+const bash = testBash();
 async function shell(t, code) {
   const cwd = await mkdtemp(join(tmpdir(), 'tds-unix-lock-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  return exec('bash', ['-c', `set -eu\n${code}`], {
+  return exec(bash, ['-c', `set -eu\n${code}`], {
     cwd, timeout: 10000, env: { ...process.env, NODE_OPTIONS: '' },
   });
 }

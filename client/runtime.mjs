@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
-import { DEVSPACE_VERSION, loadState, stateHome, upstreamEnvironment, writeUpstreamConfig } from './state.mjs';
+import { DEVSPACE_VERSION, GIT_PREREQUISITE_VERSION, loadState, stateHome, upstreamEnvironment, writeUpstreamConfig } from './state.mjs';
 import { startUpdateChecks } from './updates.mjs';
 
 const require = createRequire(import.meta.url);
@@ -12,17 +12,36 @@ const applicationRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 export function prepareWindowsRuntimeEnvironment(root = applicationRoot) {
   if (process.platform !== 'win32') return;
   const currentPath = process.env.PATH ?? '';
-  const bundledBash = join(root, 'git', 'bin');
-  let bashDirectory = existsSync(join(bundledBash, 'bash.exe')) ? bundledBash : null;
-  if (!bashDirectory) {
+  const managedGit = resolve(root, '..', '..', 'prerequisites', 'git', GIT_PREREQUISITE_VERSION);
+  const legacyGit = join(root, 'git');
+  const systemGitRoots = [
+    ...(process.env.ProgramFiles ? [join(process.env.ProgramFiles, 'Git')] : []),
+    ...(process.env['ProgramFiles(x86)'] ? [join(process.env['ProgramFiles(x86)'], 'Git')] : [])];
+  let bashDirectory = null;
+  let gitCommandDirectory = null;
+  for (const gitRoot of systemGitRoots) {
+    const bash = join(gitRoot, 'bin'); const command = join(gitRoot, 'cmd');
+    if (existsSync(join(bash, 'bash.exe')) && existsSync(join(command, 'git.exe'))) {
+      bashDirectory = bash; gitCommandDirectory = command; break;
+    }
+  }
+  if (!bashDirectory || !gitCommandDirectory) {
     for (const entry of currentPath.split(delimiter)) {
       const directory = entry.replace(/^"(.*)"$/, '$1');
       if (!directory || !existsSync(join(directory, 'git.exe'))) continue;
       const sibling = resolve(directory, '..', 'bin');
-      if (existsSync(join(sibling, 'bash.exe'))) { bashDirectory = sibling; break; }
+      if (existsSync(join(sibling, 'bash.exe'))) { bashDirectory = sibling; gitCommandDirectory = directory; break; }
     }
   }
-  process.env.PATH = [bashDirectory, currentPath, join(root, 'git', 'cmd'), join(root, 'runtime'), join(root, 'bin')]
+  if (!bashDirectory || !gitCommandDirectory) {
+    for (const gitRoot of [managedGit, legacyGit]) {
+      const bash = join(gitRoot, 'bin'); const command = join(gitRoot, 'cmd');
+      if (existsSync(join(bash, 'bash.exe')) && existsSync(join(command, 'git.exe'))) {
+        bashDirectory = bash; gitCommandDirectory = command; break;
+      }
+    }
+  }
+  process.env.PATH = [bashDirectory, gitCommandDirectory, currentPath, join(root, 'runtime'), join(root, 'bin')]
     .filter(Boolean).join(delimiter);
   delete process.env.NODE_OPTIONS;
 }

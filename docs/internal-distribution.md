@@ -4,7 +4,7 @@ The source repository is Public; operator configuration and employee state remai
 
 ## Windows
 
-The normal handoff is the self-contained EXE, not a credential-bearing ZIP. Local builds do not promise public Authenticode trust or SmartScreen reputation. Existing administrator tooling may apply the fixed `CN=Team DevSpace Internal Publisher` signature before final acceptance, but an internal self-signed identity is not a publicly trusted publisher.
+The normal handoff is the Team DevSpace EXE, not a credential-bearing ZIP. Its application runtime is embedded, but Windows Git Bash is an external prerequisite: an existing installation is reused, otherwise the bootstrap obtains the pinned official Git for Windows asset and verifies its SHA-256. Local builds do not promise public Authenticode trust or SmartScreen reputation. Existing administrator tooling may apply the fixed `CN=Team DevSpace Internal Publisher` signature before final acceptance, but an internal self-signed identity is not a publicly trusted publisher.
 
 The stable installation script validates the complete EXE hash and size before execution. It never imports a certificate, changes the global PowerShell policy, supplies an Access Key, or bypasses a system warning. Administrators who deliberately manage an internal publisher certificate can retain their separate current-user trust procedure; it is not required or silently invoked by the public download flow. A PFX, password or private key must never enter the download directory or release asset.
 

@@ -28,7 +28,7 @@ Cloudflare Worker + D1 → Key / Device Binding
 
 支持 Windows x64、macOS ARM64 / Intel x64 和 Linux x64。具体版本、最低系统版本及工具链以 [release.config.json](release.config.json)、锁文件和 `scripts/binaries.json` 为准，不以 README 中的版本快照为准。
 
-安装包自包含 Node、DevSpace、cloudflared 和按需使用的 Windows PortableGit；员工机器不执行 npm 安装。覆盖升级保留 Key、绑定、项目目录与暂停意图。卸载保留员工配置和项目文件；退休设备还需管理员撤销 Key。内部发行的系统签名限制见 [内部发行与信任](docs/internal-distribution.md)，不要关闭整机 Gatekeeper 或 SmartScreen。
+安装包自包含 Node、DevSpace 和 cloudflared；员工机器不执行 npm 安装。Windows 优先复用现有 Git Bash；确实缺失时，安装器只从固定的 Git for Windows 官方 Release 获取精确版本并校验 SHA-256，Git 本身不进入 Team DevSpace 的公开发行字节。覆盖升级保留 Key、绑定、项目目录与暂停意图。卸载保留员工配置和项目文件；退休设备还需管理员撤销 Key。内部发行的系统签名限制见 [内部发行与信任](docs/internal-distribution.md)，不要关闭整机 Gatekeeper 或 SmartScreen。
 
 本仓库默认是**不可连接生产的示例发行配置**。`gateway.example.com`、`downloads.example.com` 和示例公钥不是可用服务，开发构建不能发给员工。正式构建由管理员注入组织配置；配置不包含员工 Key。
 
@@ -57,7 +57,7 @@ npm run deploy -- --dry-run
 
 发行复用原安装器、不可变版本、Ed25519 更新签名和 `stable / auto / minimumSupported / enforceAfter`。正式包必须与验收的提交、发行配置及最终字节一致。不能重建已发布的同一版本，也不能重新生成现有客户端信任的更新密钥。
 
-GitHub Releases 尚未用于公开安装器。Git for Windows 等组件的对应源码提供义务及第三方许可清单是独立门槛，CI 通过不等于合规闭环。旧客户端拒绝 HTTP 重定向，不能把旧下载地址直接改成 302。现有员工下载源和旧版恢复包保持不变。见 [公开与二进制边界](docs/public-readiness.md)。
+GitHub Releases 尚未用于公开安装器。Git for Windows 已从 Team DevSpace 发行字节移出；公开二进制仍需对真正随包发布的 Node、cloudflared、npm/Rust 依赖和许可清单做最终字节级审查，CI 通过不等于合规闭环。旧客户端拒绝 HTTP 重定向，不能把旧下载地址直接改成 302。现有员工下载源和旧版恢复包保持不变。见 [公开与二进制边界](docs/public-readiness.md)。
 
 ## 管理员部署
 

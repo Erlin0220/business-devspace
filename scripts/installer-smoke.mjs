@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -19,7 +20,7 @@ await access(sourceInstaller);
 const sourceLayout = dirname(sourceInstaller);
 const manifest = await readJson(join(sourceLayout, 'manifest.json'));
 const payloadBytes = manifest.components.reduce((total, component) => total + component.size, 0);
-assert.ok((await stat(sourceInstaller)).size > payloadBytes * 0.9, 'Windows installer must physically contain its complete offline payload');
+assert.ok((await stat(sourceInstaller)).size > payloadBytes * 0.9, 'Windows installer must physically contain every embedded Team DevSpace component');
 const exists = async path => access(path).then(() => true, () => false);
 const suffix = randomUUID().slice(0, 8);
 const tempRoot = resolve(process.env.TEMP ?? '.');
@@ -86,8 +87,9 @@ const server = http.createServer(async (request, response) => {
   } else { response.statusCode = 404; response.end('{}'); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-// Force the clean-employee-machine path: no system Git/Bash on PATH. The real
-// installer must verify, extract and execute the official optional Git SFX.
+// Remove PATH-based Git discovery. The installer may still reuse a standard
+// system Git installation; otherwise it must acquire the pinned official
+// prerequisite instead of carrying Git inside the Team DevSpace EXE.
 const env = { ...process.env, TEAM_DEVSPACE_HOME: home, NODE_OPTIONS: '',
   PATH: [process.env.SystemRoot, join(process.env.SystemRoot, 'System32'),
     join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0')].join(';') };
@@ -281,7 +283,7 @@ try {
   const pendingActive = await readJson(join(install, 'active.json'));
   assert.equal(await exists(pendingActive.path), true, 'Local application must remain active when Enrollment is unavailable');
   assert.equal(await exists(join(install, 'onboarding-error.log')), true, 'Post-install connection failure must be diagnosed separately');
-  assert.equal(await exists(join(install, 'cache')), false, 'The self-contained installer must not create a persistent payload cache');
+  assert.equal(await exists(join(install, 'cache')), false, 'The installer must not create a persistent application payload cache');
 
   enrollmentUnavailable = false;
   assert.equal(await repair(), 0, 'Pending Enrollment must resume through the product Repair path without reinstalling payloads');
@@ -314,8 +316,14 @@ try {
   await run(process.execPath, ['scripts/verify-release.mjs', '--target', 'win32-x64', '--installed', firstActive.path]);
   const upstream = await readJson(join(firstActive.path, 'node_modules', '@waishnav', 'devspace', 'package.json'));
   assert.equal(upstream.version, release.devspaceVersion);
-  assert.equal(await exists(join(firstActive.path, 'git', 'cmd', 'git.exe')), true);
-  assert.equal(await exists(join(firstActive.path, 'git', 'bin', 'bash.exe')), true);
+  assert.equal(await exists(join(firstActive.path, 'git')), false,
+    'Git for Windows must not be embedded in an immutable Team DevSpace app slot');
+  const managedGit = join(install, 'prerequisites', 'git', release.gitPrerequisiteVersion);
+  const gitRoots = [managedGit,
+    ...(process.env.ProgramFiles ? [join(process.env.ProgramFiles, 'Git')] : []),
+    ...(process.env['ProgramFiles(x86)'] ? [join(process.env['ProgramFiles(x86)'], 'Git')] : [])];
+  assert.ok(gitRoots.some(root => existsSync(join(root, 'cmd', 'git.exe')) && existsSync(join(root, 'bin', 'bash.exe'))),
+    'The installed product must have a usable Git Bash prerequisite without redistributing it in the app slot');
 
   await writeFile(join(firstActive.path, 'obsolete-upgrade-fixture.txt'), 'must disappear from the next immutable version');
   const enrollmentCallsBeforeUpgrade = enrollmentCalls;
@@ -343,7 +351,7 @@ try {
   assert.equal(enrollmentCalls, enrollmentCallsAfterCredentialRepair, 'Re-running the installer for file repair must reuse healthy Enrollment');
   const repairedActive = await readJson(join(install, 'active.json'));
   assert.notEqual(repairedActive.path, secondActive.path);
-  assert.equal(await exists(join(repairedActive.path, 'bin', 'cloudflared.exe')), true, 'Re-running the self-contained installer repairs local program files');
+  assert.equal(await exists(join(repairedActive.path, 'bin', 'cloudflared.exe')), true, 'Re-running the installer repairs embedded local program files');
   assert.equal((await readdir(join(install, 'v'), { withFileTypes: true })).filter(entry => entry.isDirectory()).length, 1,
     'Keep only the current extracted version after a successful activation');
   assert.equal(repairedActive.previous, null);
@@ -360,7 +368,7 @@ try {
   assert.equal(await exists(join(install, 'v')), false);
   assert.equal((await readJson(join(home, 'state.json'))).bindingId, bindingId);
   assert.equal(await exists(project), true);
-  successReport = { passed: true, actualInstaller: true, selfContainedInstaller: true,
+  successReport = { passed: true, actualInstaller: true, embeddedRuntimeInstaller: true,
     automaticUpdatesDisabledInFixture: true,
     crossVersionUpgrades,
     directFinalInstaller: Boolean(values.direct), credentialFreeInstallAndReinstall: true,
@@ -368,7 +376,8 @@ try {
     pendingEnrollmentRepairReusesIdentity: true, upgradeSkipsEnrollment: true,
     healthyRepairIsLocalOnly: true, missingTunnelCredentialIsRecoverable: true,
     rerunInstallerRepairsPayload: true, noPersistentPayloadCache: true,
-    officialGitFallbackExecuted: true, retiredVersionsCollected: true, damagedClientUninstallFallback: true,
+    externalGitPrerequisiteAvailable: true, gitNotInAppSlot: true,
+    retiredVersionsCollected: true, damagedClientUninstallFallback: true,
     uninstallPreservesProjects: true, zeroResidue: true, uninstallMs };
 } catch (error) {
   primaryFailure = error;

@@ -81,7 +81,9 @@ export async function buildTray(destination) {
   const metadata = await run(cargo, ['metadata', '--locked', '--format-version', '1', '--filter-platform', filterPlatform],
     { cwd: crate, env: buildEnv, capture: true, timeout: 120000 });
   const rustcCommand = /[\\/]/.test(cargo) ? join(dirname(resolve(cargo)), 'rustc.exe') : 'rustc';
-  const rustc = await run(rustcCommand, ['--version'], { env: buildEnv, capture: true, timeout: 30000 });
+  // rustup selects native/tray/rust-toolchain.toml by cwd. Reading rustc at the
+  // repository root can report a different default toolchain than built this EXE.
+  const rustc = await run(rustcCommand, ['--version'], { cwd: crate, env: buildEnv, capture: true, timeout: 30000 });
   return { implementation: 'rust', metadata: JSON.parse(metadata.stdout), rustVersion: rustc.stdout.trim(),
     sha256: await sha256File(binary), cached: false };
 }

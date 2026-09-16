@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { access, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildReleaseLayout, validateDistributionConfig } from '../scripts/distribution.mjs';
+import { buildReleaseLayout, validateDistributionConfig, validateWindowsGitPrerequisite } from '../scripts/distribution.mjs';
 import { run, sha256File } from '../scripts/build-utils.mjs';
 import { dependencyFingerprint, pruneRuntime } from '../scripts/runtime-profile.mjs';
 
@@ -60,7 +60,7 @@ test('macOS postinstall confirms visible UI instead of trusting process startup'
 const baseRelease = {
   version: '1.2.3', gateway: 'https://team.example.test', devspaceVersion: '1.0.8',
   nodeVersion: '22.23.0', cloudflaredVersion: '2026.8.3', cloudflaredSourceCommit: 'f'.repeat(40),
-  cloudflaredGoVersion: '1.26.8', gitFallbackVersion: '2.55.0.windows.5',
+  cloudflaredGoVersion: '1.26.8', gitPrerequisiteVersion: '2.55.0.windows.5',
   distribution: { mode: 'static-https', origin: 'https://downloads.example.com', trustProfile: 'internal-free', macosMinimumVersion: '12.0',
     targets: ['win32-x64', 'darwin-arm64', 'darwin-x64', 'linux-x64'] },
 };
@@ -77,7 +77,7 @@ test('distribution config requires static HTTPS, internal-free trust and explici
     distribution: { ...baseRelease.distribution, targets: ['win32-x64', 'win32-x64'] } }));
 });
 
-test('release layout separates app, upstream dependencies, runtimes and optional fallback', async t => {
+test('release layout embeds core runtime components and keeps Git Bash as an official external prerequisite', async t => {
   const work = await mkdtemp(join(tmpdir(), 'tds-distribution-'));
   t.after(() => rm(work, { recursive: true, force: true }));
   const bundle = join(work, 'bundle');
@@ -96,12 +96,13 @@ test('release layout separates app, upstream dependencies, runtimes and optional
   await mkdir(join(bundle, 'LICENSES'));
   for (const [path, contents] of Object.entries(files)) await writeFile(join(bundle, path), contents);
   const tar = process.platform === 'win32' ? join(process.env.SystemRoot, 'System32', 'tar.exe') : '/usr/bin/tar';
-  const gitFallbackArchive = join(work, 'official-PortableGit.7z.exe');
-  await writeFile(gitFallbackArchive, 'official-self-extracting-archive-fixture');
-  const build = () => buildReleaseLayout({ bundle, target: 'win32-x64', release: baseRelease, tar, outputDirectory: output, gitFallbackArchive });
+  const gitPrerequisite = { url: 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe',
+    sha256: 'a'.repeat(64) };
+  assert.equal(validateWindowsGitPrerequisite(baseRelease, gitPrerequisite).condition, 'git-bash-unavailable');
+  const build = () => buildReleaseLayout({ bundle, target: 'win32-x64', release: baseRelease, tar, outputDirectory: output, gitPrerequisite });
   const built = await build();
   assert.deepEqual(built.components.map(component => component.name),
-    ['app', 'devspace-runtime', 'node', 'cloudflared', 'git-fallback']);
+    ['app', 'devspace-runtime', 'node', 'cloudflared']);
   for (const component of built.components) {
     const artifact = join(built.layout, ...component.path.split('/'));
     assert.equal((await stat(artifact)).size, component.size);
@@ -112,12 +113,15 @@ test('release layout separates app, upstream dependencies, runtimes and optional
   const listing = (await run(tar, ['-tzf', appArchive], { capture: true })).stdout;
   assert.doesNotMatch(listing, /node_modules/);
   const manifest = JSON.parse(await readFile(built.manifestPath, 'utf8'));
-  assert.equal(manifest.installMode, 'offline');
+  assert.equal(manifest.installMode, 'embedded-components');
   assert.equal('sourceBase' in manifest, false);
   assert.equal(await sha256File(built.manifestPath), built.manifestSha256);
-  const git = built.components.find(component => component.name === 'git-fallback');
-  assert.equal(git.format, '7z-sfx');
-  assert.equal(git.sha256, await sha256File(gitFallbackArchive), 'The official self-extractor must not be recompressed');
+  assert.deepEqual(manifest.externalPrerequisites.gitBash, {
+    source: 'git-for-windows-official-release', condition: 'git-bash-unavailable',
+    version: baseRelease.gitPrerequisiteVersion, ...gitPrerequisite,
+  });
+  assert.equal(built.components.some(component => component.name.includes('git')), false,
+    'Git for Windows must not be redistributed inside Team DevSpace release objects');
   const runtime = built.components.find(component => component.name === 'devspace-runtime');
   const runtimeListing = (await run(tar, ['-tzf', join(built.layout, runtime.path)], { capture: true })).stdout;
   assert.match(runtimeListing, /node_modules\/example\/index\.js/);

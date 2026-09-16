@@ -3,7 +3,7 @@ import { access, readFile, readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { validateDistributionConfig } from './distribution.mjs';
-import { run, sha256File } from './build-utils.mjs';
+import { compareDottedVersions, machOMinimumMacOS, run, sha256File } from './build-utils.mjs';
 
 const { values } = parseArgs({ options: {
   root: { type: 'string' }, target: { type: 'string' }, installed: { type: 'string' },
@@ -26,7 +26,7 @@ for (const target of targets) {
   assert.equal(manifest.trust, 'bootstrap-embedded-manifest');
   assert.equal(manifest.release, release.version);
   assert.equal(manifest.target, target);
-  assert.equal(manifest.installMode, 'offline');
+  assert.equal(manifest.installMode, 'embedded-components');
   assert.equal('sourceBase' in manifest, false);
 
   const expectedManifestHash = (await readFile(join(directory, 'manifest.json.sha256'), 'utf8')).trim().split(/\s+/)[0];
@@ -84,6 +84,11 @@ for (const target of targets) {
     const upstream = JSON.parse(await readFile(join(installed, 'node_modules/@waishnav/devspace/package.json'), 'utf8'));
     assert.equal(upstream.version, release.devspaceVersion);
     if (process.platform === 'darwin') {
+      const cloudflaredMinimumMacOS = await machOMinimumMacOS(join(installed, cloudPath));
+      assert.ok(compareDottedVersions(cloudflaredMinimumMacOS, distribution.macosMinimumVersion) <= 0,
+        `Installed cloudflared requires macOS ${cloudflaredMinimumMacOS}, above ${distribution.macosMinimumVersion}`);
+      assert.equal(provenance.cloudflaredBuild?.machoMinimumMacOS, cloudflaredMinimumMacOS,
+        'Recorded cloudflared Mach-O baseline differs from the installed binary');
       const macho = process.arch === 'x64' ? 'x86_64' : 'arm64';
       for (const path of executable) {
         const archs = (await run('/usr/bin/lipo', ['-archs', join(installed, path)], { capture: true })).stdout.trim().split(/\s+/);

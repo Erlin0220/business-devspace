@@ -243,16 +243,92 @@ function Invoke-Client([string]$Root, [string[]]$Arguments, [switch]$AllowFailur
   return $code
 }
 
-function Test-NeedGitFallback {
+function Test-GitBashRoot([string]$Root) {
+  if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
+  return (Test-Path -LiteralPath (Join-Path $Root 'cmd\git.exe') -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $Root 'bin\bash.exe') -PathType Leaf)
+}
+
+function Find-GitBashRoot([object]$Git, [string]$CandidateRoot) {
+  foreach ($root in @(
+    $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'Git' }),
+    $(if ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) { Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Git' })
+  )) {
+    if (Test-GitBashRoot $root) { return $root }
+  }
   foreach ($entry in @($env:PATH -split ';')) {
     $directory = $entry.Trim('"')
     if ([string]::IsNullOrWhiteSpace($directory)) { continue }
-    $git = Join-Path $directory 'git.exe'
-    if (-not (Test-Path -LiteralPath $git -PathType Leaf)) { continue }
-    $bash = Join-Path (Split-Path $directory -Parent) 'bin\bash.exe'
-    if (Test-Path -LiteralPath $bash -PathType Leaf) { return $false }
+    $gitExe = Join-Path $directory 'git.exe'
+    if (-not (Test-Path -LiteralPath $gitExe -PathType Leaf)) { continue }
+    $root = Split-Path $directory -Parent
+    if (Test-GitBashRoot $root) { return $root }
   }
-  return $true
+  if ($Git -and $Git.version) {
+    $managed = Join-Path $InstallPath "prerequisites\git\$($Git.version)"
+    if (Test-GitBashRoot $managed) { return $managed }
+  }
+  if ($CandidateRoot) {
+    $legacy = Join-Path $CandidateRoot 'git'
+    if (Test-GitBashRoot $legacy) { return $legacy }
+  }
+  return $null
+}
+
+function Test-NeedGitPrerequisite([object]$Git, [string]$CandidateRoot) {
+  return -not [bool](Find-GitBashRoot $Git $CandidateRoot)
+}
+
+function Assert-GitPrerequisiteMetadata([object]$Git) {
+  if (-not $Git -or [string]$Git.source -ne 'git-for-windows-official-release' -or
+      [string]$Git.condition -ne 'git-bash-unavailable' -or
+      [string]$Git.version -notmatch '^\d+\.\d+\.\d+\.windows\.\d+$' -or
+      [string]$Git.sha256 -notmatch $shaPattern) {
+    throw 'Invalid Windows Git prerequisite metadata.'
+  }
+  try { $uri = [Uri]([string]$Git.url) } catch { throw 'Invalid Windows Git prerequisite URL.' }
+  $prefix = "/git-for-windows/git/releases/download/v$($Git.version)/"
+  $asset = if ($uri.AbsolutePath.StartsWith($prefix, [StringComparison]::Ordinal)) {
+    $uri.AbsolutePath.Substring($prefix.Length)
+  } else { '' }
+  if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or $uri.UserInfo -or
+      $uri.Query -or $uri.Fragment -or $asset -notmatch '^PortableGit-[A-Za-z0-9._-]+-64-bit\.7z\.exe$') {
+    throw 'Windows Git prerequisite must use the pinned official Git for Windows PortableGit release.'
+  }
+}
+
+function Install-GitPrerequisite([object]$Git) {
+  Assert-GitPrerequisiteMetadata $Git
+  $destination = Join-Path $InstallPath "prerequisites\git\$($Git.version)"
+  if (Test-GitBashRoot $destination) { return $destination }
+  $parent = Split-Path $destination -Parent
+  New-Item -ItemType Directory -Path $parent -Force | Out-Null
+  $temporary = Join-Path $parent ('.candidate-' + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $temporary | Out-Null
+  try {
+    $archive = Join-Path $temporary 'PortableGit.7z.exe'
+    Write-Step "Downloading Git for Windows $($Git.version) from the official release..."
+    $curl = Join-Path $nativeSystemDirectory 'curl.exe'
+    if (-not (Test-Path -LiteralPath $curl -PathType Leaf)) { throw 'Windows curl.exe is required to acquire the Git prerequisite securely.' }
+    & $curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 4 `
+      --retry-delay 2 --connect-timeout 30 --max-time 240 --max-filesize 268435456 --output $archive ([string]$Git.url)
+    if ($LASTEXITCODE -ne 0) { throw "Git prerequisite download failed with curl exit code $LASTEXITCODE." }
+    $item = Get-Item -LiteralPath $archive
+    if ($item.Length -le 0 -or $item.Length -gt 268435456) { throw 'Git prerequisite download exceeds the 256 MiB safety limit.' }
+    if ((Get-Sha256 $archive) -ne [string]$Git.sha256) { throw 'Git prerequisite SHA-256 verification failed.' }
+    Expand-PortableGit $archive $temporary
+    $expanded = Join-Path $temporary 'git'
+    if (-not (Test-GitBashRoot $expanded)) { throw 'Git prerequisite extraction is incomplete.' }
+    if (Test-Path -LiteralPath $destination) { Remove-PayloadTree $destination }
+    Move-Item -LiteralPath $expanded -Destination $destination
+    $gitExe = Join-Path $destination 'cmd\git.exe'
+    $bashExe = Join-Path $destination 'bin\bash.exe'
+    if ((& $gitExe --version | Out-String) -notmatch [regex]::Escape([string]$Git.version)) {
+      throw 'Managed Git version differs from the pinned prerequisite.'
+    }
+    if ((& $bashExe --version | Out-String) -notmatch 'GNU bash') { throw 'Managed Git Bash did not execute.' }
+    return $destination
+  } finally { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 function Assert-Manifest([object]$Manifest) {
@@ -260,17 +336,19 @@ function Assert-Manifest([object]$Manifest) {
       $Manifest.target -ne 'win32-x64' -or $Manifest.release -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
     throw 'This release manifest is not valid for Windows x64.'
   }
-  if ($Manifest.installMode -ne 'offline') {
-    throw 'This installer only accepts the offline release contract.'
+  if ($Manifest.installMode -ne 'embedded-components') {
+    throw 'This installer only accepts the embedded-component release contract.'
   }
+  $external = @($Manifest.externalPrerequisites.PSObject.Properties)
+  if ($external.Count -ne 1 -or $external[0].Name -ne 'gitBash') { throw 'Windows release must declare exactly one Git Bash prerequisite.' }
+  Assert-GitPrerequisiteMetadata $Manifest.externalPrerequisites.gitBash
   $names = @{}
   foreach ($component in @($Manifest.components)) {
     $name = [string]$component.name
     if ($names.ContainsKey($name)) { throw "Duplicate component in manifest: $name" }
     $names[$name] = $true
-    $suffix = if ($component.format -eq '7z-sfx' -and $name -eq 'git-fallback') { '\.7z\.exe' }
-      elseif ($component.format -eq 'tar.gz') { '\.tar\.gz' } else { throw "Unsupported component format: $name" }
-    if ($name -notin @('app', 'devspace-runtime', 'node', 'cloudflared', 'git-fallback') -or
+    $suffix = if ($component.format -eq 'tar.gz') { '\.tar\.gz' } else { throw "Unsupported component format: $name" }
+    if ($name -notin @('app', 'devspace-runtime', 'node', 'cloudflared') -or
         [string]$component.sha256 -notmatch $shaPattern -or
         [int64]$component.size -le 0 -or [int64]$component.size -gt 2147483648 -or
         [string]$component.path -notmatch "^objects/sha256/$($component.sha256)/[A-Za-z0-9._-]+$suffix`$") {
@@ -398,13 +476,10 @@ function Assert-Version([string]$Root, [object]$Manifest) {
     $nativeCode = $LASTEXITCODE
   } finally { Pop-Location }
   if ($nativeCode -ne 0) { throw 'Installed native SQLite module failed to load.' }
-  $git = Join-Path $Root 'git\cmd\git.exe'
-  $bash = Join-Path $Root 'git\bin\bash.exe'
-  if ((Test-Path -LiteralPath $git) -or (Test-Path -LiteralPath $bash)) {
-    if (-not (Test-Path -LiteralPath $git) -or -not (Test-Path -LiteralPath $bash)) { throw 'Git fallback is incomplete.' }
-    if ((& $git --version) -notmatch [regex]::Escape([string]$Manifest.runtime.gitFallbackVersion)) { throw 'Git fallback version differs from manifest.' }
-    if ((& $bash --version | Out-String) -notmatch 'GNU bash') { throw 'Git fallback Bash did not execute.' }
-  }
+  $gitRoot = Find-GitBashRoot $Manifest.externalPrerequisites.gitBash $Root
+  if (-not $gitRoot) { throw 'Git Bash prerequisite is unavailable.' }
+  if ((& (Join-Path $gitRoot 'cmd\git.exe') --version | Out-String) -notmatch '^git version ') { throw 'Git prerequisite did not execute.' }
+  if ((& (Join-Path $gitRoot 'bin\bash.exe') --version | Out-String) -notmatch 'GNU bash') { throw 'Git Bash prerequisite did not execute.' }
 }
 
 function Stop-CandidateForRollback([string]$Candidate) {
@@ -448,7 +523,7 @@ try {
     }
     Stop-InstallProcesses
     Write-Step 'Removing local application payload...'
-    foreach ($name in @('versions', 'staging', 'v', 's', 'cache', 'a')) {
+    foreach ($name in @('versions', 'staging', 'v', 's', 'cache', 'a', 'prerequisites')) {
       Remove-PayloadTree (Join-Path $InstallPath $name)
     }
     Write-Step 'Application payload and startup entries removed. Enrollment and project files are retained.'
@@ -458,6 +533,11 @@ try {
   Write-Step 'Verifying the installer manifest...'
   $manifest = Read-Json $ManifestPath
   Assert-Manifest $manifest
+  $gitPrerequisite = $manifest.externalPrerequisites.gitBash
+  $activeRoot = if ($active) { [string]$active.path } else { $null }
+  if (Test-NeedGitPrerequisite $gitPrerequisite $activeRoot) {
+    [void](Install-GitPrerequisite $gitPrerequisite)
+  }
   if (-not $OfflineRoot -or -not (Test-Path -LiteralPath (Join-Path $OfflineRoot 'objects') -PathType Container)) {
     throw 'The installer embedded payload is unavailable.'
   }
@@ -478,20 +558,16 @@ try {
   Initialize-StagingDirectory $stage
   try {
     foreach ($component in @($manifest.components)) {
-      $condition = if ($component.PSObject.Properties['condition']) { [string]$component.condition } else { '' }
-      if ($condition -eq 'git-unavailable' -and -not (Test-NeedGitFallback)) { continue }
       $componentName = switch ([string]$component.name) {
         'app' { 'Team DevSpace application' }
         'devspace-runtime' { 'DevSpace runtime dependency set' }
         'node' { 'Node.js runtime' }
         'cloudflared' { 'Cloudflare connection helper' }
-        'git-fallback' { 'Git fallback' }
         default { [string]$component.name }
       }
       Write-Step "Verifying and unpacking $componentName..."
       $archive = Receive-Artifact $component
-      if ($component.format -eq '7z-sfx') { Expand-PortableGit $archive $stage }
-      else { Expand-VerifiedArchive $archive $stage }
+      Expand-VerifiedArchive $archive $stage
       Write-Step "$componentName is ready."
     }
     Copy-Item -LiteralPath $ManifestPath -Destination (Join-Path $stage 'install-manifest.json')

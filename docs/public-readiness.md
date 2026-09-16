@@ -15,14 +15,17 @@ This is source-available, not OSI open source. Existing third-party licenses and
 notices remain applicable. Tracked operator configuration is reserved examples;
 commits use a GitHub noreply address. Publicity grants no production access.
 
-## Public binary distribution remains blocked
+## Public binary distribution gate
 
 No old installers or GitHub Releases are migrated here. Building successfully
-does not satisfy redistribution obligations. Before any public installer
-delivery, including Actions artifacts, close the exact-version Git for Windows
-and applicable MSYS/MinGW complete-corresponding-source delivery obligations,
-and the remaining Go/compiler/runtime notice inventory. A generic upstream link
-or SBOM is not evidence of a fulfilled source delivery arrangement.
+does not satisfy redistribution obligations. Git for Windows is no longer part
+of Team DevSpace release bytes: Windows reuses an existing Git Bash or acquires
+the exact pinned official asset directly from the upstream GitHub Release after
+SHA-256 verification. The final public-binary gate therefore applies to the
+components actually redistributed by Team DevSpace: Node, cloudflared, locked
+npm dependencies, native/Rust payloads and their notices/source obligations. A
+generic upstream link or SBOM is not evidence of a completed redistribution
+review; final extracted bytes remain the authority.
 
 The native workflow therefore uploads **only acceptance.json**, never installer
 bytes, extracted applications, private audit reports or operator profiles.
@@ -83,7 +86,10 @@ is archival evidence, not an active public CI chain.
 [Cutover Issue #1](https://github.com/Erlin0220/business-devspace/issues/1)
 records subsequent reviewed changes, final CI/runs and enforcement evidence.
 [Binary gate #2](https://github.com/Erlin0220/business-devspace/issues/2)
-remains independent and open. Receipt-only artifacts do not authorize release.
+remains independent until the final redistributed-byte inventory and notices are
+accepted. The previous PortableGit corresponding-source blocker is removed by
+the distribution boundary rather than by weakening its license obligations.
+Receipt-only artifacts do not authorize release.
 
 ## Primary references
 

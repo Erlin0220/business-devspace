@@ -51,10 +51,10 @@ InstallDirRegKey HKCU "${PRODUCT_KEY}" "InstallDir"
 SetCompressor zlib
 ShowInstDetails show
 ShowUninstDetails show
-BrandingText "Team DevSpace offline installer - official DevSpace ${DEVSPACE_VERSION}"
+BrandingText "Team DevSpace installer - official DevSpace ${DEVSPACE_VERSION}"
 VIProductVersion "${APP_VERSION_NUM}"
 VIAddVersionKey "ProductName" "Team DevSpace"
-VIAddVersionKey "FileDescription" "Team DevSpace self-contained offline installer"
+VIAddVersionKey "FileDescription" "Team DevSpace installer with embedded application runtime"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
 
 Var RequestFile
@@ -143,7 +143,7 @@ Section "Install"
   ${If} $NoStartup == "1"
     StrCpy $Arguments '$Arguments -NoStartup'
   ${EndIf}
-  DetailPrint "Verifying and installing the offline Team DevSpace components..."
+  DetailPrint "Verifying and installing Team DevSpace components..."
   Call StartBootstrapProgress
   nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" $Arguments'
   Pop $ResultCode
