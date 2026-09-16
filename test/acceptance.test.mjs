@@ -64,7 +64,10 @@ test('installed payload verification rejects a foreign manifest and altered nati
   const root = await mkdtemp(join(tmpdir(), 'tds-installed-content-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'scripts'));
-  for (const file of ['verify-release.mjs', 'distribution.mjs', 'build-utils.mjs', 'download-catalog.mjs']) await cp(join('scripts', file), join(root, 'scripts', file));
+  for (const file of ['verify-release.mjs', 'distribution.mjs', 'build-utils.mjs', 'download-catalog.mjs',
+    'cloudflared-source.mjs', 'npm-license-evidence.mjs']) {
+    await cp(join('scripts', file), join(root, 'scripts', file));
+  }
   await copyCatalogContract(root);
   await writeFile(join(root, 'release.config.json'), JSON.stringify(release));
   const target = `${process.platform}-${process.arch}`;

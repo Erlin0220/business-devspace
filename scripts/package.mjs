@@ -5,11 +5,13 @@ import { createHash } from 'node:crypto';
 import { compareDottedVersions, downloadPinned, machOMinimumMacOS, run, sha256File } from './build-utils.mjs';
 import { buildReleaseLayout } from './distribution.mjs';
 import { dependencyFingerprint, pruneRuntime, RUNTIME_PROFILE } from './runtime-profile.mjs';
+import { collectCloudflaredNotices, prepareCloudflaredSource } from './cloudflared-source.mjs';
 import { buildWindowsLauncher } from './windows-launcher.mjs';
 import { buildTray } from './tray-build.mjs';
 import { macosSigningConfiguration, notarizeMacPackage, signMacApplication } from './macos-signing.mjs';
 import release, { releaseProfileDigest } from './release-profile.mjs';
 import { collectRustNotices } from './native-notices.mjs';
+import { collectNpmLicenseEvidence } from './npm-license-evidence.mjs';
 
 const { values } = parseArgs({ options: {
   'prepare-only': { type: 'boolean' }, 'reuse-dependencies': { type: 'boolean' },
@@ -142,6 +144,8 @@ if (process.platform === 'win32') {
 }
 for (const file of ['package.json', 'package-lock.json', '.npmrc', 'README.md', 'LICENSE', 'NOTICE']) await cp(file, join(bundle, file));
 await cp('LICENSES', join(bundle, 'LICENSES'), { recursive: true });
+const cloudflaredSource = await prepareCloudflaredSource();
+const cloudflaredLicenseManifest = await collectCloudflaredNotices(cloudflaredSource, join(bundle, 'LICENSES', 'cloudflared'));
 await writeFile(join(bundle, 'release.config.json'), `${JSON.stringify(release, null, 2)}\n`);
 const node = process.platform === 'win32' ? join(runtime, 'node.exe') : join(runtime, 'bin', 'node');
 // The pinned modern npm honors security overrides instead of dependency-published shrinkwrap trees.
@@ -188,6 +192,7 @@ if (!values['reuse-dependencies'] || previousFingerprint !== fingerprint) {
     { cwd: bundle, env: buildEnvironment, timeout: 600000 });
 }
 await pruneRuntime(bundle, target);
+const npmLicenseEvidence = await collectNpmLicenseEvidence(bundle);
 if (process.platform === 'darwin') {
   // microsoft/node-pty#850: stable 1.1.0 ships its macOS spawn-helper as 0644.
   // Fix executable metadata only; keep upstream code and the pinned version.
@@ -249,6 +254,21 @@ await writeFile(join(bundle, 'package.json'), `${JSON.stringify(runtimePackage, 
 const sbom = await run(node, [npmCli, 'sbom', '--sbom-format=cyclonedx', ...dependencyOmissions],
   { cwd: bundle, env: buildEnvironment, capture: true });
 const sbomDocument = JSON.parse(sbom.stdout);
+// npm currently omits CycloneDX license metadata for a few packages even when
+// their installed package.json and license files declare it. Fill only missing
+// entries from the exact installed lock metadata; never replace npm's value.
+const installedLock = JSON.parse(await readFile(join(bundle, 'package-lock.json'), 'utf8'));
+for (const component of sbomDocument.components ?? []) {
+  if ((component.licenses ?? []).length || !component.name || !component.version) continue;
+  const candidates = Object.entries(installedLock.packages ?? {}).filter(([path, entry]) =>
+    path.endsWith(`node_modules/${component.name}`) && entry.version === component.version && typeof entry.license === 'string');
+  const licenses = [...new Set(candidates.map(([, entry]) => entry.license.trim()).filter(Boolean))];
+  if (licenses.length !== 1) continue;
+  const declared = licenses[0];
+  const spdx = new Map([['apache-2.0', 'Apache-2.0'], ['mit', 'MIT'], ['isc', 'ISC'],
+    ['bsd-2-clause', 'BSD-2-Clause'], ['bsd-3-clause', 'BSD-3-Clause'], ['0bsd', '0BSD']]).get(declared.toLowerCase());
+  component.licenses = [{ license: spdx ? { id: spdx } : { name: declared } }];
+}
 if (trayBuild?.implementation === 'rust') {
   await collectRustNotices(trayBuild.metadata, join(bundle, 'LICENSES', 'rust'));
   const rustPackages = trayBuild.metadata.packages.filter(package_ =>
@@ -264,7 +284,7 @@ await writeFile(join(bundle, 'THIRD-PARTY-NOTICES.txt'), [
   `Team DevSpace includes @waishnav/devspace ${release.devspaceVersion} and its locked npm dependency versions; employee runtime archives omit source maps and TypeScript declaration files only.`,
   'Each dependency retains its own copyright and license files in node_modules. The SBOM lists package licenses.',
   `Node.js ${release.nodeVersion}: https://nodejs.org/ (license and notices in runtime/LICENSE)`,
-  `cloudflared ${release.cloudflaredVersion}: Apache-2.0, https://github.com/cloudflare/cloudflared`,
+  `cloudflared ${release.cloudflaredVersion}: Apache-2.0; exact root and vendored dependency license/notice files from source commit ${release.cloudflaredSourceCommit} are retained under LICENSES/cloudflared/.`,
   ...(trayBuild?.implementation === 'appkit' ? ['The macOS UI uses system AppKit/Foundation, with no third-party UI dependencies.'] : []),
   ...(trayBuild?.implementation === 'rust' ? ['The native tray dependency graph is recorded in Cargo.lock and sbom.cdx.json; original Cargo dependency license and notice files are retained in LICENSES/rust/.',
     'tray-icon 0.24.2: MIT OR Apache-2.0, https://github.com/tauri-apps/tray-icon'] : []),
@@ -288,6 +308,11 @@ await writeFile(join(bundle, 'release-provenance.json'), JSON.stringify({
     version: release.gitPrerequisiteVersion, source: 'git-for-windows-official-release', ...binaries.git[target],
   } } } : {}),
   dependencyFingerprint: fingerprint, dependencyInstallProfile, npmVersion,
+  npmLicenses: { packages: npmLicenseEvidence.packages, fallbackPackages: npmLicenseEvidence.fallbackPackages,
+    manifestSha256: await sha256File(join(bundle, 'LICENSES', 'npm-fallback', 'MANIFEST.json')) },
+  cloudflaredLicenses: { sourceCommit: cloudflaredLicenseManifest.sourceCommit,
+    files: cloudflaredLicenseManifest.files.length,
+    manifestSha256: await sha256File(join(bundle, 'LICENSES', 'cloudflared', 'MANIFEST.json')) },
   ...(process.platform === 'darwin' ? { cloudflaredBuild: {
     version: release.cloudflaredVersion, sourceCommit: release.cloudflaredSourceCommit,
     goVersion: release.cloudflaredGoVersion, minimumMacOS: release.distribution.macosMinimumVersion,

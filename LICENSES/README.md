@@ -8,18 +8,18 @@ notices are not replaced by it.
 | --- | --- |
 | `@waishnav/devspace` | MIT; `DevSpace-MIT.txt` and installed `node_modules/@waishnav/devspace/LICENSE` |
 | Pico CSS | MIT; `assets/admin/PICO-LICENSE.md` (Gateway distribution) |
-| cloudflared | Apache-2.0; `cloudflared-LICENSE.txt`; pinned upstream source in release provenance |
+| cloudflared | Apache-2.0; `cloudflared-LICENSE.txt`; exact root and vendored dependency license/notice files from the pinned source commit are packaged under `LICENSES/cloudflared/` with a hash manifest |
 | Node.js | Node's own license and bundled notices in `runtime/LICENSE` |
 | Git for Windows / PortableGit | External Windows prerequisite only. When Git Bash is absent, the installer acquires the pinned official Git for Windows release directly from GitHub and verifies its SHA-256. It is not included in Team DevSpace release bytes. |
-| npm dependencies | Original license files retained in runtime packages; exact versions/licenses recorded by the generated CycloneDX SBOM |
+| npm dependencies | Original license/notice files remain in runtime packages and the generated CycloneDX SBOM records exact versions/licenses. If a published npm package has no standalone license file, its published `package.json` content and README are retained under `LICENSES/npm-fallback/` together with the declared MIT/Apache-2.0 terms and an explicit generated-evidence notice; the manifest distinguishes these fallbacks from upstream-authored license files. |
 | Rust tray dependencies | Original resolved Cargo package license/NOTICE files copied into packaged `LICENSES/rust/`, with a path-redacted index; exact dependency graph in Cargo.lock and the SBOM |
 
 The packaging allow-list includes LICENSE, NOTICE and this directory. It must
 not strip upstream license, COPYING or NOTICE files when pruning dependencies.
 Rust notice collection fails packaging when a resolved external crate has no
-original notice files. This does not certify the license compatibility of every
-dependency, compiler runtime or Go dependency embedded in cloudflared. Those
-remain part of final binary redistribution review.
+original notice files. npm and cloudflared evidence are also verified against
+their final packaged bytes. These automated checks improve redistribution
+evidence but do not constitute legal advice or certify license compatibility.
 
 Git for Windows is an independent external prerequisite, not linked into Team
 DevSpace and not redistributed inside Team DevSpace installers. Its own GPL and

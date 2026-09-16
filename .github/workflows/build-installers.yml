@@ -70,6 +70,18 @@ jobs:
         run: node scripts/verify-release.mjs --target "$EXPECTED_TARGET"
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
+      - name: Audit exact redistributed bytes and retained licenses
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p "build/redistribution/$EXPECTED_TARGET"
+          node scripts/audit-inventory.mjs \
+            --directory "build/bundle-$EXPECTED_TARGET" \
+            --output "build/redistribution/$EXPECTED_TARGET/syft.json"
+          node scripts/verify-redistribution.mjs \
+            --bundle "build/bundle-$EXPECTED_TARGET" \
+            --inventory "build/redistribution/$EXPECTED_TARGET/syft.json.summary.json" \
+            --output "build/redistribution/$EXPECTED_TARGET/evidence.json"
       - name: Accept final Windows installer in the disposable runner
         if: runner.os == 'Windows'
         env:
@@ -91,14 +103,23 @@ jobs:
           sudo systemctl start "user@$(id -u).service"
           systemctl --user show-environment >/dev/null
           npm run acceptance:platform
-      - name: Retain acceptance receipt only - binary redistribution is not approved
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - name: Retain acceptance and redistribution evidence only - installer bytes remain blocked
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: acceptance-${{ matrix.target }}-${{ github.sha }}
-          path: release/offline/${{ steps.metadata.outputs.version }}/${{ matrix.target }}/acceptance.json
+          name: evidence-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            release/offline/${{ steps.metadata.outputs.version }}/${{ matrix.target }}/acceptance.json
+            build/redistribution/${{ matrix.target }}/syft.json.summary.json
+            build/redistribution/${{ matrix.target }}/evidence.json
+            build/bundle-${{ matrix.target }}/sbom.cdx.json
+            build/bundle-${{ matrix.target }}/THIRD-PARTY-NOTICES.txt
+            build/bundle-${{ matrix.target }}/release-provenance.json
+            build/bundle-${{ matrix.target }}/LICENSES/**
           if-no-files-found: error
           retention-days: 30
 
 # Source-only public CI: no operator profile, production signing key, employee
 # credentials, installer uploads, Releases, deployment or rollout mutation.
 # Old immutable installers are read-only test inputs, never public artifacts.
+# Candidate artifacts contain review metadata/license text only. Installer bytes
+# stay local to each disposable runner until the separate public-binary gate is closed.

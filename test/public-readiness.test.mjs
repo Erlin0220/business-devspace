@@ -108,7 +108,7 @@ test('superseded Codemagic and Intel handoff entrypoints stay retired', async ()
   }
 });
 
-test('public native CI accepts all four sample installers without exporting binaries or production configuration', async () => {
+test('public native CI accepts all four sample installers while exporting only review evidence, never installer bytes or production configuration', async () => {
   const workflow = await readFile('.github/workflows/build-installers.yml', 'utf8');
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /environment: validation/);
@@ -116,9 +116,10 @@ test('public native CI accepts all four sample installers without exporting bina
   for (const target of ['win32-x64', 'linux-x64', 'darwin-arm64', 'darwin-x64']) assert.ok(workflow.includes(target));
   assert.match(workflow, /acceptance:platform -- --direct-windows-installer/);
   assert.match(workflow, /acceptance:platform -- --system-macos-installer/);
-  const uploads = [...workflow.matchAll(/^\s+path:\s+(.+)$/gm)].map(match => match[1]);
-  assert.equal(uploads.length, 1);
-  assert.ok(uploads[0].endsWith('/acceptance.json'), 'Only an allow-listed receipt may leave the disposable runner');
+  for (const evidence of ['acceptance.json', 'syft.json.summary.json', 'evidence.json', 'sbom.cdx.json',
+    'THIRD-PARTY-NOTICES.txt', 'release-provenance.json', 'LICENSES/**']) assert.ok(workflow.includes(evidence));
+  assert.doesNotMatch(workflow, /Team-DevSpace-.*\.(?:exe|pkg|tar\.gz)/,
+    'Installer bytes must remain on the disposable runner until the public-binary gate is closed');
   const acceptance = await readFile('scripts/platform-acceptance.mjs', 'utf8');
   assert.match(acceptance, /sourceDirty !== false \|\| commit !== process\.env\.GITHUB_SHA/);
   assert.match(acceptance, /required\.some\(check => evidence\.checks\[check\] !== true\)/);
