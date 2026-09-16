@@ -188,6 +188,10 @@ jobs:
           NODE
       - name: Reverify transferred bytes against all native acceptance receipts
         run: node scripts/prepare-public-release.mjs --input build/public-release-inputs --output build/public-release --commit "$GITHUB_SHA"
+      - name: Sign immutable update metadata with the protected release key
+        env:
+          TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM: ${{ secrets.TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM }}
+        run: node scripts/prepare-signed-update.mjs --directory build/public-release
       - name: Publish one immutable GitHub Release from the already-accepted bytes
         env:
           VERSION: ${{ needs.gate.outputs.version }}
@@ -217,7 +221,8 @@ jobs:
             gh release delete-asset "$tag" "redistribution-$target.json" --repo "$GITHUB_REPOSITORY" --yes
           done
           gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
-            build/public-release/SHA256SUMS build/public-release/PUBLIC-RELEASE-EVIDENCE.json
+            build/public-release/SHA256SUMS build/public-release/PUBLIC-RELEASE-EVIDENCE.json \
+            build/public-release/catalog.json build/public-release/update.json
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets > build/public-release/github-assets.json
           node --input-type=module - <<'NODE'
           import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto';

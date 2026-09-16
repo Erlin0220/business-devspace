@@ -39,8 +39,17 @@ Access application is an explicit local operation, not part of CI deploy.
 Configure Variable `TEAM_DEVSPACE_RELEASE_PROFILE` (the public client profile
 JSON above). Configure Secrets `TEAM_DEVSPACE_DEPLOYMENT` (resource identity
 JSON), `ADMIN_ACCESS_EMAILS`, `CLOUDFLARE_DEPLOY_API_TOKEN`, `CF_RUNTIME_API_TOKEN`, `ADMIN_TOKEN`, `MASTER_KEY`
-and any existing platform-signing credentials. The update metadata private key
-remains in the separate authorized publication step; never put it in a profile.
+and any existing platform-signing credentials in the `production` Environment.
+The update metadata private key belongs only to the separate `public-release`
+Environment as `TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM`; never put it in a profile,
+deployment Environment, download server or workstation-only default path.
+
+`MASTER_KEY` is not replaceable configuration: existing D1 enrollment ciphertexts
+depend on the exact value. Losing it requires device re-enrollment unless a tested
+dual-key migration is performed. Update-signing and platform-signing private keys
+also cannot be reconstructed from their public identity. Before deleting an old
+secret store or repository Environment, verify the primary copy and the independent
+recovery path described in `docs/ops/secret-disaster-recovery-2026-09-16.md`.
 
 Restrict the Environment to the reviewed `main` branch. Use an available
 reviewer policy only when it can actually be satisfied; a solo maintainer must

@@ -23,6 +23,9 @@ const deployment = JSON.parse(await readFile('config/deployment.example.json', '
 const wrangler = JSON.parse(await readFile('wrangler.jsonc', 'utf8'));
 const packageWorkflow = await readFile('.github/workflows/build-installers.yml', 'utf8');
 const deployWorkflow = await readFile('.github/workflows/deploy.yml', 'utf8');
+const publicReleaseWorkflow = await readFile('.github/workflows/public-release.yml', 'utf8');
+const updateSigning = await readFile('scripts/sign-updates.mjs', 'utf8');
+const updateKeyProvisioning = await readFile('scripts/provision-update-signing-key.mjs', 'utf8');
 const binaries = JSON.parse(await readFile('scripts/binaries.json', 'utf8'));
 const windowsSigning = await readFile('scripts/sign-internal-windows.ps1', 'utf8');
 const windowsPlatformFiles = await readdir('platform/windows');
@@ -101,6 +104,19 @@ for (const required of [
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
 ]) {
   if (!deployWorkflow.includes(required)) throw new Error(`GitHub Action must stay on its reviewed Node 24 pin: ${required}`);
+}
+if (!publicReleaseWorkflow.includes('environment: public-release') ||
+    !publicReleaseWorkflow.includes('secrets.TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM') ||
+    !publicReleaseWorkflow.includes('scripts/prepare-signed-update.mjs')) {
+  throw new Error('Production update metadata must be signed only inside the protected public-release Environment');
+}
+if (/homedir\(|defaultSigningKey|\.team-devspace-admin/.test(updateSigning) ||
+    !updateSigning.includes('TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM')) {
+  throw new Error('Update signing must not have an implicit per-user local-key fallback');
+}
+if (!updateKeyProvisioning.includes("privateKeyWrittenToDisk: false") ||
+    /writeFile|appendFile|createWriteStream/.test(updateKeyProvisioning)) {
+  throw new Error('Update-key provisioning must keep the private key in memory and write only protected GitHub Secrets');
 }
 
 if (!picoLicense.includes('MIT License')) throw new Error('Vendored Pico CSS must keep its MIT license');

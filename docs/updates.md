@@ -49,7 +49,9 @@ macOS 自动检查和准备更新，但安装仍需用户确认原生 PKG 的系
 
 Gateway 的 stable 发现也验证 `/update.json`，对成功结果做最多 60 秒的内存缓存与并发合并，不为每个设备重复向下载站请求。策略写入重新读取，不能使用缓存批准新版本。仅 root update 返回 404 且 catalog 不高于 0.2.3 时保留历史手动恢复路径；新的缺失/无效签名不降级到普通 catalog。签名真实性不等于防冻结，当前没有宣称实现 TUF 的过期/根密钥恢复协议。
 
-签名私钥首次在管理员当前用户保护目录 `~/.team-devspace-admin/update-signing/release-key.pem` 生成，不上传 Gateway、下载服务器、仓库或 CI。必须与管理员恢复材料一起离线备份；私钥丢失/泄露需要明确的公钥轮换发布，不能直接覆盖现有客户端信任根。测试只使用临时测试密钥，不给模拟产物签发生产签名。
+2026-09-16 的恢复事件证明“本机单副本 + 文档提醒备份”不足以保护不可恢复的更新信任根。生产私钥不再有 `~/.team-devspace-admin` 隐式默认路径：日常 Release Key 只由 GitHub `public-release` Environment Secret `TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM` 提供，签名发生在最终 accepted bytes 已重新验证之后。GitHub Release 同时保存与 exact bytes 绑定的 `catalog.json` / `update.json`；阿里云/Caddy 发布器只消费并再次验证这个已签名元数据，不持有签名私钥。测试继续只使用临时测试密钥。
+
+如果当前客户端内置公钥对应的私钥已经丢失，不能用新随机私钥冒充原身份。必须发布明确的 trust-root migration 版本，并按现有客户端能力执行一次可信人工覆盖安装或未来定义的根密钥轮换协议。具体事故事实、Secret 分类与恢复边界见 `docs/ops/secret-disaster-recovery-2026-09-16.md`。
 
 发布仍要求四平台最终安装入口的 exact-byte、同一干净提交 acceptance。例行交付使用服务器完整哈希与有界公网 HEAD/Range 检查，避免四个包反复全量公网下载。新上传不会立即改变 stable。
 
