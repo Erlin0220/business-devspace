@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { DOWNLOAD_TARGETS, ALIASES, packageName, httpsOrigin, validateCatalog, downloadPage } from '../scripts/download-catalog.mjs';
 import { buildDownloadCatalog, prepareSite, prepareHomepage, main, retainedReleaseVersions } from '../scripts/publish-downloads.mjs';
+import { verifyPublishedRelease } from '../scripts/verify-published-release.mjs';
 import { UPGRADE_BASELINES } from '../scripts/upgrade-baselines.mjs';
 import { testBash } from './test-bash.mjs';
 
@@ -20,7 +21,7 @@ test('release cleanup retains cold-cache upgrade fixtures independently of rollo
 });
 import { verifyAcceptance } from '../scripts/verify-acceptance.mjs';
 import { renderAdmin } from '../gateway/admin-web.mjs';
-import { signUpdateFixture } from './update-fixture.mjs';
+import { signUpdateFixture, updateTestPublicKey } from './update-fixture.mjs';
 
 const origin = 'https://downloads.example.com';
 const commit = 'a'.repeat(40);
@@ -177,6 +178,41 @@ test('publication requires final installer evidence for exact commit and exact b
   await writeFile(x64Path, JSON.stringify(x64Evidence));
   await writeFile(join(f.input, 'win32-x64', evidence.entrypoint.name), 'corrupt');
   await assert.rejects(verifyAcceptance(args), /differs from the accepted bytes/);
+});
+
+test('final immutable public release evidence can be re-imported without fabricating native acceptance receipts', async t => {
+  const f = await fixture(t, '1.2.3');
+  const published = join(f.root, 'published');
+  await mkdir(published);
+  const targets = [];
+  for (const target of DOWNLOAD_TARGETS) {
+    const item = f.catalog.targets[target];
+    await cp(join(f.input, target, item.file), join(published, item.file));
+    targets.push({ target, name: item.file, size: item.size, sha256: item.sha256,
+      acceptanceSha256: 'c'.repeat(64), redistributionEvidenceSha256: 'd'.repeat(64) });
+  }
+  const sums = `${targets.map(item => `${item.sha256}  ${item.name}`).join('\n')}\n`;
+  await writeFile(join(published, 'SHA256SUMS'), sums);
+  const { createHash } = await import('node:crypto');
+  const sumDigest = createHash('sha256').update(sums).digest('hex');
+  const evidence = { schema: 1, release: f.version, commit, releaseProfileSha256: 'e'.repeat(64),
+    targets, sha256sumsSha256: sumDigest };
+  await writeFile(join(published, 'PUBLIC-RELEASE-EVIDENCE.json'), `${JSON.stringify(evidence, null, 2)}\n`);
+  await writeFile(join(published, 'catalog.json'), `${JSON.stringify(f.catalog, null, 2)}\n`);
+  await writeFile(join(published, 'update.json'), `${JSON.stringify(await signUpdateFixture(f.catalog), null, 2)}\n`);
+  const verified = await verifyPublishedRelease(published, { expectedVersion: f.version, expectedCommit: commit,
+    expectedProfileSha256: evidence.releaseProfileSha256, publicKey: updateTestPublicKey });
+  assert.deepEqual(verified.catalog, f.catalog);
+  const site = join(f.root, 'reimported-site');
+  await prepareSite(published, site, f.catalog, origin, 'Immutable public release fixture\n', {
+    signedUpdate: verified.signedUpdate, publicKey: updateTestPublicKey, sourceMode: 'public-release',
+  });
+  assert.deepEqual(await readFile(join(site, 'PUBLIC-RELEASE-EVIDENCE.json')),
+    await readFile(join(published, 'PUBLIC-RELEASE-EVIDENCE.json')));
+  await assert.rejects(readFile(join(site, 'acceptance-win32-x64.json')), { code: 'ENOENT' });
+  await writeFile(join(published, f.catalog.targets['win32-x64'].file), 'tampered');
+  await assert.rejects(verifyPublishedRelease(published, { expectedVersion: f.version,
+    expectedProfileSha256: evidence.releaseProfileSha256, publicKey: updateTestPublicKey }), /size mismatch|digest mismatch/);
 });
 
 test('server publication is immutable, all-or-nothing, CAS guarded and genuinely reversible', { skip: process.platform === 'win32' }, async t => {

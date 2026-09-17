@@ -30,7 +30,7 @@ local copy, while recovery was advisory instead of an enforced release prerequis
 | --- | --- | --- | --- |
 | Update Ed25519 release private key | GitHub `public-release` Environment | No | Use verified recovery copy, or execute an explicit client trust-root migration. Never replace it in place. |
 | `MASTER_KEY_V2` | GitHub `production` Environment + Worker secret + protected recovery copy | No | Preserve exact value. Rotation requires compatibility with old ciphertext, full D1 re-encryption and verification before old key retirement. Without a usable key, reset/re-enroll affected devices. |
-| Windows internal-signing PFX | Protected GitHub Environment while identity remains in use | No | Restore protected PFX backup or deliberately introduce a new publisher identity/trust procedure. Public releases currently do not depend on this internal signature. |
+| Windows internal-signing PFX | Archived private recovery material only; identity retired from current public releases | No | Do not migrate it into the public repository merely for completeness. Restore it only if the historical internal Publisher identity is deliberately reintroduced; otherwise retire it with the private archive retention plan. |
 | macOS signing/notary credentials | Protected CI Environment when enabled | Apple/provider replacement rules apply | Revoke/reissue through Apple and update CI. Current internal-free distribution is unsigned/unnotarized. |
 | `ADMIN_TOKEN` | GitHub `production` Environment + Worker secret | No need to reconstruct | Generate a new token and deploy both administrator configuration and Worker consistently. |
 | Cloudflare deploy/runtime API tokens | GitHub `production` Environment | No need to reconstruct | Revoke old token, issue a least-privilege replacement, update Environment, validate scopes. |
@@ -76,6 +76,13 @@ This creates `MASTER_KEY_V2` in the deployed Worker, `business-devspace:producti
 and the archived private repository's `recovery` Environment. Production code must
 run in dual-key mode until every retained `device_secret_box` has been verified and
 re-encrypted under V2. Only then may the legacy Worker `MASTER_KEY` be deleted.
+
+For the 0.2.8 updater trust-root recovery, do not expose new-key root update metadata
+to old-key clients before their one-time manual install. The final immutable GitHub
+Release is re-imported to Aliyun under `/releases/0.2.8/` using its public release
+evidence and signed catalog while the `stable` symlink remains on 0.2.6. This gives
+employees a fixed trusted manual-install URL without silently changing what existing
+0.2.6 clients see at `/catalog.json` and `/update.json`.
 
 ## Change checklist
 
