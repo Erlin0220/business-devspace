@@ -8,7 +8,7 @@
   "ratelimits": [
     { "name": "ENROLLMENT_LIMITER", "namespace_id": "240601", "simple": { "limit": 6, "period": 60 } }
   ],
-  "assets": { "directory": "./assets", "binding": "ASSETS", "run_worker_first": ["/*", "!/mcp-app-assets/*"], "html_handling": "none" },
+  "assets": { "directory": "./assets", "binding": "ASSETS", "run_worker_first": ["/*", "!/mcp-app-assets/*", "!/robots.txt"], "html_handling": "none" },
   "observability": {
     "enabled": true,
     "redact_query_string": true,

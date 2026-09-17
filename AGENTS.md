@@ -2,7 +2,9 @@
 
 ### Issue tracker
 
-Issues and specs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+GitHub Issues are the durable request and tracking surface. Spec Kit design artifacts may live under
+`specs/<feature>/` when a feature uses the Spec Kit workflow; they supplement the linked GitHub Issue
+rather than replacing it. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

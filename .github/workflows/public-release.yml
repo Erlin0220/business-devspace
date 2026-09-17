@@ -41,7 +41,11 @@ jobs:
             echo "Release $tag already exists; immutable public releases are never overwritten." >&2
             exit 1
           fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+          if ! existing_tag="$(git ls-remote --tags origin "refs/tags/$tag")"; then
+            echo "Cannot verify immutable tag ownership; publication is blocked." >&2
+            exit 1
+          fi
+          if [ -n "$existing_tag" ]; then
             echo "Tag $tag already exists; immutable public releases are never overwritten." >&2
             exit 1
           fi
@@ -201,7 +205,12 @@ jobs:
           tag="v$VERSION"
           published=0
           cleanup() {
-            if [ "$published" = 0 ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes || true; fi
+            if [ "$published" = 0 ]; then
+              # The publish request may have succeeded before its response was
+              # lost. A local exit code must never authorize deleting a public release.
+              draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+              if [ "$draft" = true ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes || true; fi
+            fi
           }
           trap cleanup ERR
           node --input-type=module - <<'NODE' > build/public-release/issue-2-release-evidence.md

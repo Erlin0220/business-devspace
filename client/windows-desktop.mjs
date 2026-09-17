@@ -38,7 +38,7 @@ $owner.Opacity = 0
 # globally pinning it over other apps or disabling a foreign browser window.
 $picker = New-Object System.Windows.Forms.FolderBrowserDialog
 $picker.Description = '选择 Team DevSpace 项目目录'
-$picker.ShowNewFolderButton = $false
+$picker.ShowNewFolderButton = $true
 if ($env:TEAM_DEVSPACE_CURRENT_PROJECT -and (Test-Path -LiteralPath $env:TEAM_DEVSPACE_CURRENT_PROJECT -PathType Container)) {
   $picker.SelectedPath = $env:TEAM_DEVSPACE_CURRENT_PROJECT
 }

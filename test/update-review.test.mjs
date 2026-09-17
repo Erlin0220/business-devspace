@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { atomicJson, readJson, RELEASE_VERSION } from '../client/state.mjs';
-import { applyUpdate, checkForUpdates, startUpdateChecks } from '../client/updates.mjs';
+import { applyUpdate, checkForUpdates, startUpdateChecks, updateBridge } from '../client/updates.mjs';
 import { createDesktopController } from '../client/desktop-controller.mjs';
 import { updateTestCatalog, updateTestBytes, updateTestPublicKey, signUpdateFixture } from './update-fixture.mjs';
 
@@ -17,6 +18,18 @@ async function temporary(t) {
   const home = await mkdtemp(join(tmpdir(), 'tds-update-review-'));
   t.after(() => rm(home, { recursive: true, force: true })); return home;
 }
+
+test('update readiness rejects a truncated bridge response rather than leaving the operation pending', { timeout: 3000 }, async t => {
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Length': '2' });
+    response.write('x');
+    setTimeout(() => response.destroy(), 20);
+  });
+  t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await assert.rejects(updateBridge({ ports: { bridge: server.address().port },
+    deviceSecret: 'test-secret', bindingId: 'test-binding' }, 'GET'), /aborted|reset/i);
+});
 
 test('an initial or post-upgrade check failure preserves retry backoff across restarts', async t => {
   for (const oldVersion of [null, '0.2.3']) {

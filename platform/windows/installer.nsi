@@ -56,6 +56,7 @@ VIProductVersion "${APP_VERSION_NUM}"
 VIAddVersionKey "ProductName" "Team DevSpace"
 VIAddVersionKey "FileDescription" "Team DevSpace installer with embedded application runtime"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
+VIAddVersionKey "LegalCopyright" "Copyright (c) 2026 Erlin0220"
 
 Var RequestFile
 Var ResultCode

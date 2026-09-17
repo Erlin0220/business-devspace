@@ -12,7 +12,7 @@ is necessary to preserve employee connectivity and update trust.
 | Employee release profile | `.runtime/release-profile.json` selected with `TEAM_DEVSPACE_RELEASE_PROFILE`, or `TEAM_DEVSPACE_RELEASE_PROFILE_JSON` | `gateway`, `downloadOrigin`, existing `updatePublicKey` only |
 | Provisioned resource identities | `.runtime/deployment.json` or `TEAM_DEVSPACE_DEPLOYMENT_JSON` | `zoneId`, `databaseId`, `accessApplicationId` |
 | Deployment credentials | `.runtime/cloudflare.json` / scoped CI Secrets | deployment token, runtime token, Access administrator emails |
-| Runtime administration | `.runtime/admin.json` / scoped CI Secrets | existing `ADMIN_TOKEN`, existing `MASTER_KEY` |
+| Runtime administration | `.runtime/admin.json` / scoped CI Secrets | local `gateway`, `adminToken`, `masterKeyV2`; CI `ADMIN_TOKEN`, canonical `MASTER_KEY_V2` |
 | Legacy static publication | `.runtime/downloads.json` | SSH host alias and owned remote root |
 
 Copy templates from `config/` into the ignored private directory and fill them
@@ -33,6 +33,12 @@ npm run deploy
 For an existing installation, reuse the backed-up profile and identities; do
 not generate replacement trust or encryption keys. Provisioning a new D1 or
 Access application is an explicit local operation, not part of CI deploy.
+Deployment rejects missing or legacy-only administrator credentials before remote
+changes; it never creates an encryption root or promotes `masterKey` to
+`masterKeyV2`. Restore the canonical V2 credential from the protected primary or
+recovery store. A new installation must also explicitly provision and independently
+back up its root before the first Worker deployment; `configure` only collects
+Cloudflare API credentials and does not create that root.
 
 ## GitHub production Environment
 

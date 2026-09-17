@@ -16,6 +16,7 @@ test('public MCP assets bypass the Worker while all control/admin routes remain 
   await mkdir(join(directory, 'mcp-app-assets', 'assets'), { recursive: true });
   await mkdir(join(directory, 'admin'));
   await writeFile(join(directory, '_headers'), await readFile('assets/_headers'));
+  await writeFile(join(directory, 'robots.txt'), await readFile('assets/robots.txt'));
   const content = 'export const asset = true;';
   await writeFile(join(directory, 'mcp-app-assets', 'assets', 'fixture-123.js'), content);
   await writeFile(join(directory, 'mcp-app-assets', 'workspace-app.html'), '<!doctype html><title>fixture</title>');
@@ -51,6 +52,10 @@ test('public MCP assets bypass the Worker while all control/admin routes remain 
   const html = await mf.dispatchFetch('https://team.example.test/mcp-app-assets/workspace-app.html', { redirect: 'manual' });
   assert.equal(html.status, 200, 'Public HTML does not add a redirect request');
   assert.equal(html.headers.has('X-Request-Id'), false);
+  const robots = await mf.dispatchFetch('https://team.example.test/robots.txt');
+  assert.equal(robots.status, 200);
+  assert.equal(robots.headers.has('X-Request-Id'), false, 'Routine crawler discovery must bypass Worker execution');
+  assert.match(await robots.text(), /Disallow: \/$/m);
   const legacyStatus = await mf.dispatchFetch('https://team.example.test/v1/device/status', { method: 'POST' });
   assert.equal(legacyStatus.status, 404, 'Legacy status is absent from the contracted Worker API');
   assert.ok(legacyStatus.headers.get('X-Request-Id'), 'Local Worker fallback remains observable; production blocks this path before Worker invocation');

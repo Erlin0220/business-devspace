@@ -1,6 +1,6 @@
 # Internal-free software trust
 
-The source repository is Public; operator configuration and employee state remain private, and device access remains authenticated. Existing employee installer files are intentionally available without download authentication. `internal-free` describes code-signing limitations, not an access-control promise. Public GitHub installer distribution is separately blocked by the compliance gate in [public-readiness.md](public-readiness.md). Existing employee delivery is documented in [one-command-distribution.md](one-command-distribution.md).
+The source repository is Public; operator configuration and employee state remain private, and device access remains authenticated. Existing employee installer files are intentionally available without download authentication. `internal-free` describes code-signing limitations, not an access-control promise. The original public-binary compliance gate is closed; GitHub installer publication is allowed only through the accepted-byte release workflow described in [public-readiness.md](public-readiness.md). Existing employee delivery is documented in [one-command-distribution.md](one-command-distribution.md).
 
 ## Windows
 
@@ -24,4 +24,4 @@ The stable CLI resolves `active-path`. Upgrades retain identity and pause intent
 
 One clean source commit and exact final-byte acceptance are required for every platform. Signing, where used, must precede that acceptance. The manual GitHub matrix validates all four native sample targets; local tools remain available for debugging and separately authorized operator builds. Authorized employee publication still uses the existing delivery tool, verifies exact bytes and HTTPS reads, then switches a stable pointer deliberately. Historical versions cannot be overwritten, and sample CI does not authorize such publication.
 
-Old private GitHub Releases remain historical archive storage and are not imported into the Public repository; employees never need a GitHub token. Public installers require the separate redistribution-compliance gate to close. Public Windows signing and Apple Developer ID/notarization remain future trust improvements, not reasons to add R2 authentication or administrator-generated download tickets.
+Old private GitHub Releases remain historical archive storage and are not imported into the Public repository; employees never need a GitHub token. New public installers require fresh exact-byte acceptance and the protected publication workflow even though the original redistribution gate is closed. Public Windows signing and Apple Developer ID/notarization remain future trust improvements, not reasons to add R2 authentication or administrator-generated download tickets.

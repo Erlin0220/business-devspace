@@ -65,6 +65,13 @@ the archived private repository's `recovery` Environment, while printing only th
 new public key. Creating this key is a trust-root change and must not be used for a
 normal release or to overwrite an existing client trust root.
 
+Both provisioning commands now require every destination to report that the named
+secret is absent before generating anything. They do not create or modify GitHub
+Environment protections. An existing copy, an unreadable inventory, or a partial
+previous attempt blocks a new run: recover and reconcile the retained identity
+instead of generating another one. Run provisioning as a serialized operator
+procedure; the providers' list/set operations are not a distributed transaction.
+
 The D1 encryption-root recovery follows the same no-disk rule but is a data migration,
 not an in-place replacement:
 
@@ -76,6 +83,10 @@ This creates `MASTER_KEY_V2` in the deployed Worker, `business-devspace:producti
 and the archived private repository's `recovery` Environment. Production code must
 run in dual-key mode until every retained `device_secret_box` has been verified and
 re-encrypted under V2. Only then may the legacy Worker `MASTER_KEY` be deleted.
+The recovery and primary GitHub copies are saved before the Worker receives V2.
+Failure never automatically deletes a successfully saved copy or a possibly active
+Worker key. Once V2 exists, this one-time provisioning command is not a future V2
+rotation mechanism; a later rotation needs a separately reviewed compatibility path.
 
 For the 0.2.8 updater trust-root recovery, do not expose new-key root update metadata
 to old-key clients before their one-time manual install. The final immutable GitHub

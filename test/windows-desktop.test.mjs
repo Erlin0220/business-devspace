@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { runWindowsDesktop } from '../client/windows-desktop.mjs';
 
 const windows = { skip: process.platform !== 'win32', timeout: 10000 };
@@ -15,4 +16,9 @@ test('Windows desktop adapter supports cancelling a pending process', windows, a
 });
 test('Windows desktop adapter times out instead of blocking the controller indefinitely', windows, async () => {
   await assert.rejects(runWindowsDesktop('Start-Sleep -Seconds 60', { timeout: 500 }), /超时/);
+});
+
+test('Windows project picker allows creating a project directory like the macOS picker', async () => {
+  const source = await readFile('client/windows-desktop.mjs', 'utf8');
+  assert.match(source, /\$picker\.ShowNewFolderButton = \$true/);
 });

@@ -178,6 +178,9 @@ export function updateBridge(state, method, automatic = false) {
     const req = http.request({ hostname: '127.0.0.1', port: state.ports.bridge, path: '/update-drain', method,
       headers: { Authorization: `Bearer ${state.deviceSecret}`, 'X-Team-Binding-Id': state.bindingId,
         'X-Team-Update-Mode': automatic ? 'automatic' : 'manual' } }, response => {
+      // Once headers arrive, a reset belongs to the response rather than req.
+      // Reject it so the caller can release its operation/apply locks and retry.
+      response.once('error', reject);
       response.resume(); response.once('end', () => response.statusCode === 200 ? resolve_() :
         reject(Object.assign(new Error(response.statusCode === 409 ? '远程工作仍在进行，稍后再更新。' : '无法确认连接已空闲，请暂停远程访问后再更新。'),
           { code: response.statusCode === 409 ? 'remote_work_active' : 'update_readiness_unavailable' })));

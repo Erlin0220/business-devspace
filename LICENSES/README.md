@@ -8,6 +8,7 @@ notices are not replaced by it.
 | --- | --- |
 | `@waishnav/devspace` | MIT; `DevSpace-MIT.txt` and installed `node_modules/@waishnav/devspace/LICENSE` |
 | Pico CSS | MIT; `assets/admin/PICO-LICENSE.md` (Gateway distribution) |
+| GitHub Spec Kit | MIT; repository-local development workflow files under `.specify/` and `.agents/skills/speckit-*`; original license retained in `Spec-Kit-MIT.txt` |
 | cloudflared | Apache-2.0; `cloudflared-LICENSE.txt`; exact root and vendored dependency license/notice files from the pinned source commit are packaged under `LICENSES/cloudflared/` with a hash manifest |
 | Node.js | Node's own license and bundled notices in `runtime/LICENSE` |
 | Git for Windows / PortableGit | External Windows prerequisite only. When Git Bash is absent, the installer acquires the pinned official Git for Windows release directly from GitHub and verifies its SHA-256. It is not included in Team DevSpace release bytes. |
@@ -31,6 +32,7 @@ relabel Git for Windows as PolyForm-licensed.
 Upstream sources:
 - https://github.com/Waishnav/devspace
 - https://github.com/picocss/pico
+- https://github.com/github/spec-kit
 - https://github.com/cloudflare/cloudflared
 - https://nodejs.org/
 - https://github.com/git-for-windows/git

@@ -8,6 +8,7 @@ import { Miniflare, Log, LogLevel } from 'miniflare';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { reconcileCleanup, reconcileMasterKeyRotation, requestOperation } from '../gateway/index.mjs';
 import { KeyStore } from '../gateway/store.mjs';
+import { seal } from '../gateway/crypto.mjs';
 import release from '../release.config.json' with { type: 'json' };
 import { signUpdateFixture, updateTestCatalog, updateTestPublicKey } from './update-fixture.mjs';
 
@@ -199,6 +200,26 @@ test('MASTER_KEY rotation re-encrypts retained device credentials without changi
   assert.equal(after.device_secret_hash, before.device_secret_hash);
   const second = await reconcileMasterKeyRotation({ MASTER_KEY: f.masterKey, MASTER_KEY_V2: nextMasterKey }, { store });
   assert.deepEqual(second, { enabled: true, scanned: 1, migrated: 0, alreadyCurrent: 1, failed: 0 });
+});
+
+test('MASTER_KEY rotation traverses every page instead of repeatedly scanning the first 200 devices', async t => {
+  const f = await fixture(t);
+  const rows = await Promise.all(Array.from({ length: 201 }, async (_, index) => {
+    const id = `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+    const bindingId = randomUUID(), deviceSecret = secret();
+    return { id, bindingId, deviceSecretHash: hash(deviceSecret),
+      box: await seal(deviceSecret, f.masterKey, bindingId) };
+  }));
+  await f.db.batch(rows.map(row => f.db.prepare(`INSERT INTO access_keys
+    (id, label, key_hash, state, binding_id, device_secret_hash, device_secret_box)
+    VALUES (?, ?, ?, 'active', ?, ?, ?)`)
+    .bind(row.id, row.id, hash(row.id), row.bindingId, row.deviceSecretHash, row.box)));
+  const store = new KeyStore(f.db), nextMasterKey = secret();
+  const env = { MASTER_KEY: f.masterKey, MASTER_KEY_V2: nextMasterKey };
+  assert.deepEqual(await reconcileMasterKeyRotation(env, { store }),
+    { enabled: true, scanned: 201, migrated: 201, alreadyCurrent: 0, failed: 0 });
+  assert.deepEqual(await reconcileMasterKeyRotation(env, { store }),
+    { enabled: true, scanned: 201, migrated: 0, alreadyCurrent: 201, failed: 0 });
 });
 
 test('authenticated update drain is not misreported as offline and cannot leak upstream diagnostics', async t => {

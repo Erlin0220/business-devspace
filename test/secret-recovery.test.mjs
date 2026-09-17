@@ -8,9 +8,31 @@ import { join } from 'node:path';
 import { DOWNLOAD_TARGETS, packageName } from '../client/release-catalog.mjs';
 import { verifySignedCatalog } from '../client/update-policy.mjs';
 import { signUpdateCatalog } from '../scripts/sign-updates.mjs';
+import { validateDeploymentAdmin } from '../scripts/private-config.mjs';
 
 const commit = 'a'.repeat(40);
 const sha = 'b'.repeat(64);
+
+test('deployment never generates an encryption root or promotes a legacy key as a credential fallback', async () => {
+  const source = await readFile('scripts/deploy.mjs', 'utf8');
+  assert.doesNotMatch(source, /randomSecret\s*\(/, 'Deployment must not generate a replacement identity/encryption root');
+  assert.doesNotMatch(source, /masterKeyV2\s*=\s*admin\.masterKey\b/,
+    'A legacy key must not overwrite the canonical V2 root without a migration');
+  assert.ok(source.indexOf('validateDeploymentAdmin(values.ci') < source.indexOf('const zone = await api('),
+    'Canonical credentials must be validated before any remote resource mutation');
+});
+
+test('deployment credentials fail closed for missing, legacy-only, malformed or foreign state without changing it', () => {
+  const gateway = 'https://team.example.test';
+  const valid = { gateway, adminToken: 'a'.repeat(43), masterKeyV2: 'b'.repeat(43) };
+  assert.equal(validateDeploymentAdmin(valid, gateway), valid);
+  for (const admin of [null, {}, { gateway, adminToken: valid.adminToken, masterKey: 'c'.repeat(43) },
+    { ...valid, masterKeyV2: 'bad' }, { ...valid, gateway: 'https://other.example.test' }]) {
+    const before = structuredClone(admin);
+    assert.throws(() => validateDeploymentAdmin(admin, gateway), /Restore the existing|different gateway/);
+    assert.deepEqual(admin, before);
+  }
+});
 
 function signingFixture() {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');

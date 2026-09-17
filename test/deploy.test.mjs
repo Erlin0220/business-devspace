@@ -52,6 +52,23 @@ test('green health alone cannot hide broken D1/admin or stale static assets', as
   assert.equal(attempts, 2);
 });
 
+test('failed readiness probes discard response bodies before retrying', async () => {
+  const cancelled = [];
+  const stream = label => new ReadableStream({ cancel() { cancelled.push(label); } });
+  await assert.rejects(probeDeployment(fixture({ '/health': () => new Response(stream('health'), { status: 503 }) }).options),
+    /release_mismatch/);
+  assert.deepEqual(cancelled, ['health']);
+
+  await assert.rejects(probeDeployment(fixture({ '/v1/admin/keys': () => new Response(stream('admin'), { status: 503 }) }).options),
+    /admin_or_d1/);
+  assert.deepEqual(cancelled, ['health', 'admin']);
+
+  await assert.rejects(probeDeployment(fixture({ '/mcp-app-assets/test.js': () => new Response(stream('asset'), {
+    headers: { ...assetHeaders, 'Cache-Control': 'no-cache' },
+  }) }).options), /assets_failed/);
+  assert.deepEqual(cancelled, ['health', 'admin', 'asset']);
+});
+
 test('deployment recovery restores the old route and version, never overwrites an unrelated route', async () => {
   const versions = [{ percentage: 100, version_id: 'previous-version' }];
   const oldRoutes = [{ id: 'route-id', pattern: 'team.example.test/mcp-app-assets/*', script: 'team-devspace-assets' }];

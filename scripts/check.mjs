@@ -47,7 +47,7 @@ if (deployment.zoneId !== '0'.repeat(32) || deployment.databaseId !== '00000000-
 }
 
 if (wrangler.assets?.binding !== 'ASSETS' ||
-    JSON.stringify(wrangler.assets?.run_worker_first) !== JSON.stringify(['/*', '!/mcp-app-assets/*'])) {
+    JSON.stringify(wrangler.assets?.run_worker_first) !== JSON.stringify(['/*', '!/mcp-app-assets/*', '!/robots.txt'])) {
   throw new Error('Only public MCP assets may bypass the Worker; authenticated control routes, including status-v2, must remain Worker-first');
 }
 if (!wrangler.observability?.enabled || !wrangler.observability?.logs?.enabled || !wrangler.observability?.redact_query_string ||
