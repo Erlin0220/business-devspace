@@ -133,10 +133,31 @@ test('homepage preserves fixed and pinned download identities within the publica
   }
 });
 
+test('manual trust-root migration homepage pins 0.2.8-style downloads while leaving stable aliases out of the page', async t => {
+  const { root, catalog } = await fixture(t, '0.2.8');
+  const page = downloadPage(catalog, origin, { manualMigration: true });
+  assert.ok(page.includes('人工覆盖安装 0.2.8'));
+  assert.ok(page.includes('已安装旧版本？'));
+  assert.ok(page.includes('不要先卸载'));
+  assert.ok(page.includes('Access Key、设备绑定、项目目录和暂停状态会保留'));
+  assert.ok(page.includes(`${origin}/releases/0.2.8/${catalog.targets['win32-x64'].file}`));
+  assert.ok(page.includes(`irm ${origin}/releases/0.2.8/install.ps1 | iex`));
+  assert.ok(page.includes(`curl -fsSL ${origin}/releases/0.2.8/install.sh | sh`));
+  assert.ok(!page.includes(`${origin}/stable/windows-x64.exe`));
+  assert.ok(page.includes(`<link rel="canonical" href="${origin}/">`));
+  assert.ok(!page.includes('前往当前稳定版'));
+  const output = join(root, 'migration-homepage');
+  await prepareHomepage(output, catalog, origin, { manualMigration: true });
+  assert.equal(await readFile(join(output, 'index.html'), 'utf8'), page);
+  assert.throws(() => downloadPage(catalog, origin, { stable: true, manualMigration: true }), /distinct/);
+});
+
 test('homepage preview cannot publish and oversized pages fail before replacing staging output', async t => {
   for (const flag of ['--publish', '--site-only', '--init-server']) {
     await assert.rejects(main(['--preview', flag]), /separate.*operation/);
   }
+  await assert.rejects(main(['--migration-homepage', '0.2.8']), /site-only/);
+  await assert.rejects(main(['--site-only', '--migration-homepage', '../bad']), /Invalid migration homepage version/);
   const { root, catalog } = await fixture(t);
   const output = join(root, 'homepage');
   const original = await prepareHomepage(output, catalog, origin);

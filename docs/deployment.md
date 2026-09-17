@@ -78,6 +78,18 @@ The importer revalidates `PUBLIC-RELEASE-EVIDENCE.json`, package sizes/hashes,
 the server and HTTPS delivery paths. Existing clients continue to see the old stable
 feed until the operator explicitly performs the later activation.
 
+After the versioned release exists, publish the temporary employee-facing migration
+homepage separately:
+
+```sh
+npm run downloads:publish -- --site-only --migration-homepage 0.2.8
+```
+
+That homepage links directly to `/releases/0.2.8/` and explains the one-time
+in-place overwrite install. The publisher snapshots the existing root `catalog.json`
+and `update.json` before changing the homepage and refuses success if either stable
+feed changes during the operation.
+
 Restrict the Environment to the reviewed `main` branch. Use an available
 reviewer policy only when it can actually be satisfied; a solo maintainer must
 not be required to approve their own deployment as a separate reviewer. Check

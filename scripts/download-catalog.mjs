@@ -28,14 +28,18 @@ function platformIcon(target) {
   return `<svg class="icon platform-icon" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
 }
 
-export function downloadPage(catalog, origin, { stable = false } = {}) {
+export function downloadPage(catalog, origin, { stable = false, manualMigration = false } = {}) {
   validateCatalog(catalog); httpsOrigin(origin);
+  if (stable && manualMigration) throw new Error('Manual migration homepage is distinct from the stable alias homepage');
   const pinned = packageUrls(catalog, origin);
   const prefix = `${origin}/releases/${catalog.version}`;
   const urls = Object.fromEntries(DOWNLOAD_TARGETS.map(target => [target,
     stable ? `${origin}/stable/${ALIASES[target]}` : pinned[target]]));
-  const versionLabel = `${stable ? '当前稳定版' : '固定版本'} ${catalog.version}`;
-  const modeNote = stable
+  const rootHomepage = stable || manualMigration;
+  const versionLabel = manualMigration ? `人工覆盖安装 ${catalog.version}` : `${stable ? '当前稳定版' : '固定版本'} ${catalog.version}`;
+  const modeNote = manualMigration
+    ? `已安装旧版本的同事，请直接覆盖安装 ${catalog.version} 一次；无需卸载，现有 Access Key、设备绑定、项目目录和暂停状态会保留。`
+    : stable
     ? '固定网址，始终提供当前稳定版。更新后无需更换分享链接。'
     : `此页固定提供 ${catalog.version}，不是当前稳定版入口。`;
   const scriptBase = stable ? origin : prefix;
@@ -48,7 +52,7 @@ export function downloadPage(catalog, origin, { stable = false } = {}) {
       <div class="platform-head">${platformIcon(target)}<span class="file-format">${meta.format}</span></div>
       <h3>${meta.name}</h3><p class="arch">${meta.arch}</p><p class="platform-note">${meta.note}</p>
       <div class="package-meta"><span>v${catalog.version}</span><span>${sizeMiB(catalog.targets[target].size)}</span></div>
-      <a class="button package-button" data-download-target="${target}" data-download-label="${meta.label}" href="${urls[target]}" aria-label="下载 ${meta.label} 安装包">下载安装包 ${arrow}</a>
+      <a class="button package-button" data-download-target="${target}" data-download-label="${meta.label}" href="${urls[target]}" aria-label="下载 ${meta.label} 安装包">${manualMigration ? `覆盖安装 ${catalog.version}` : '下载安装包'} ${arrow}</a>
       <a class="checksum" href="${urls[target]}.sha256" aria-label="${meta.label} 的 SHA-256 校验值">SHA-256 校验值 <span aria-hidden="true">↗</span></a>
     </article>`;
   }).join('\n');
@@ -63,14 +67,14 @@ export function downloadPage(catalog, origin, { stable = false } = {}) {
 <meta property="og:type" content="website">
 <meta property="og:title" content="Team DevSpace · 把开发现场，带进 ChatGPT。">
 <meta property="og:description" content="同一个下载网址。你自己的开发环境。下载安装后，再输入管理员发放的 Access Key。">
-<meta property="og:url" content="${stable ? `${origin}/` : `${prefix}/`}">
-<link rel="canonical" href="${stable ? `${origin}/` : `${prefix}/`}">
+<meta property="og:url" content="${rootHomepage ? `${origin}/` : `${prefix}/`}">
+<link rel="canonical" href="${rootHomepage ? `${origin}/` : `${prefix}/`}">
 <link rel="icon" href="${origin}/devspace-logo-light.png" type="image/png">
-<title>Team DevSpace · ${stable ? '客户端下载' : `${catalog.version} 客户端下载`}</title>
+<title>Team DevSpace · ${manualMigration ? `${catalog.version} 人工覆盖安装` : stable ? '客户端下载' : `${catalog.version} 客户端下载`}</title>
 <style>
 /* Homepage tokens. No imported fonts, frameworks or runtime dependencies. */
 :root{color-scheme:dark;--bg:#09090b;--surface:#111114;--ink:#f4f3f5;--muted:#aaa7b1;--subtle:#8c8993;--line:#28262d;--red:#ff455b;--rose:#ff9ba6;--display:"Bahnschrift","Arial","PingFang SC","Microsoft YaHei",sans-serif;--body:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace}
-*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:28px}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 var(--body);-webkit-font-smoothing:antialiased}a{color:inherit;text-underline-offset:4px}button,input{font:inherit}::selection{background:#8c2636;color:#fff}a:focus-visible,summary:focus-visible{outline:2px solid var(--rose);outline-offset:6px;border-radius:4px}.shell{width:min(1224px,calc(100% - 80px));margin-inline:auto}.icon{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.skip{position:absolute;left:20px;top:-100px;padding:12px 20px;background:#fff;color:#111;z-index:10}.skip:focus{top:12px}.historical{padding:12px 24px;text-align:center;background:#302317;color:#f3d0a5;font-size:14px}.historical a{margin-left:12px}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:28px}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 var(--body);-webkit-font-smoothing:antialiased}a{color:inherit;text-underline-offset:4px}button,input{font:inherit}::selection{background:#8c2636;color:#fff}a:focus-visible,summary:focus-visible{outline:2px solid var(--rose);outline-offset:6px;border-radius:4px}.shell{width:min(1224px,calc(100% - 80px));margin-inline:auto}.icon{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.skip{position:absolute;left:20px;top:-100px;padding:12px 20px;background:#fff;color:#111;z-index:10}.skip:focus{top:12px}.historical{padding:12px 24px;text-align:center;background:#302317;color:#f3d0a5;font-size:14px}.historical a{margin-left:12px}.migration-banner{border-bottom:1px solid #6a3b46;background:linear-gradient(90deg,#241016,#35151f 45%,#241016);color:#f3dce2}.migration-banner-inner{min-height:58px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;font-size:13px}.migration-banner strong{color:#fff;font-weight:650}.migration-banner code{font-family:var(--mono);color:#ffb8c4}
 .topbar{position:relative;z-index:2;border-bottom:1px solid #ffffff0c}.topbar-inner{height:80px;display:flex;align-items:center;justify-content:space-between;gap:30px}.brand{display:inline-flex;gap:11px;align-items:center;font-family:var(--display);font-size:19px;font-weight:650;letter-spacing:-.6px;text-decoration:none;white-space:nowrap}.brand-mark{width:31px;height:31px;flex:none;object-fit:contain;border-radius:8px}.nav{display:flex;align-items:center;gap:30px;font-size:13px}.nav a{text-decoration:none;color:#c1bec7}.nav a:hover{color:#fff}.nav .nav-cta{display:inline-flex;align-items:center;gap:10px;background:#f0eef1;border:1px solid #f0eef1;color:#151417;border-radius:7px;padding:8px 15px;font-weight:650;min-height:42px}.nav .nav-cta:hover{background:#fff;border-color:#fff;color:#151417}.nav-cta .icon{width:15px;height:15px}
 /* The sculpture occupies a separate layer. A dark veil protects heading contrast. */
 .hero{position:relative;isolation:isolate;overflow:hidden}.hero-content{position:relative;z-index:1;padding-block:78px 70px;pointer-events:none}.hero-content a{pointer-events:auto}.hero-copy{max-width:840px}.eyebrow{display:flex;align-items:center;gap:12px;margin:0 0 26px;font:11px/1.5 var(--mono);letter-spacing:2px;color:#c5bfc8}.eyebrow:before{content:"";width:22px;height:1px;background:var(--red)}.release-pill{display:inline-flex;align-items:center;gap:9px;font-size:12px;color:#d2c8cc;border:1px solid #603640;border-radius:5px;padding:5px 10px;background:#201116;margin-bottom:25px}.release-pill .dot{width:5px;height:5px;border-radius:50%;background:var(--red)}
@@ -93,11 +97,12 @@ h1{font-family:var(--display);font-weight:650;font-size:clamp(48px,6.5vw,84px);l
 </head>
 <body>
 <a class="skip" href="#download">跳到客户端下载</a>
-${stable ? '' : `<div class="historical">固定版本 ${catalog.version} · 安装包与校验值固定<a href="${origin}/">前往当前稳定版 →</a></div>`}
+${rootHomepage ? '' : `<div class="historical">固定版本 ${catalog.version} · 安装包与校验值固定<a href="${origin}/">前往当前稳定版 →</a></div>`}
 <header class="topbar"><div class="shell topbar-inner">
   <a class="brand" href="${origin}/" aria-label="Team DevSpace 首页">${brandMark(origin)}<span>Team DevSpace</span></a>
   <nav class="nav" aria-label="主导航"><a href="#download">客户端下载</a><a href="#start">开始使用</a><a href="#faq">常见问题</a><a class="nav-cta" href="#download">获取客户端 ${arrow}</a></nav>
 </div></header>
+${manualMigration ? `<div class="migration-banner" role="status"><div class="shell migration-banner-inner"><strong>已安装旧版本？</strong><span>请直接覆盖安装 <code>${catalog.version}</code> 一次，无需卸载；现有 Access Key、设备绑定、项目目录和暂停状态会保留。</span></div></div>` : ''}
 <main>
 <section class="hero" aria-labelledby="hero-title">
   <div class="hero-art" aria-hidden="true">
@@ -132,7 +137,7 @@ ${stable ? '' : `<div class="historical">固定版本 ${catalog.version} · 安�
     <p class="hero-lead">让网页 ChatGPT 连接<strong>你自己的开发环境</strong>。<br>同一个下载网址，安装后输入 Access Key，<br>从你选择的项目目录开始工作。</p>
     <div class="hero-actions"><a class="button button-primary" data-primary-download href="#download"><span data-download-title>选择平台下载</span> ${arrow}</a><a class="button button-secondary" href="#download">所有平台 <span aria-hidden="true">↗</span></a></div>
     <p class="hero-note" id="platform-guidance" aria-live="polite">支持 Windows、macOS 与 Linux，请选择适合的安装包。</p>
-    <p class="hero-note">无需 GitHub 登录 · 无需临时票据<br><b>安装完成后</b>，再输入管理员发放的 Access Key。</p>
+    <p class="hero-note">${manualMigration ? `<b>已有 Team DevSpace：</b>直接运行 ${catalog.version} 安装包覆盖安装即可。<br>不要先卸载，完成这一次后即可恢复后续正常自动更新。` : `无需 GitHub 登录 · 无需临时票据<br><b>安装完成后</b>，再输入管理员发放的 Access Key。`}</p>
   </div></div>
 </section>
 <div class="platform-strip"><div class="shell platform-strip-inner"><span class="strip-label">ONE SPACE. EVERY PLATFORM.</span><div class="platform-links" aria-label="各平台直接下载">${platformLinks}</div></div></div>
@@ -153,6 +158,7 @@ ${stable ? '' : `<div class="historical">固定版本 ${catalog.version} · 安�
   <div class="command-stack"><div class="command-card"><div class="command-label"><span>Windows · PowerShell</span><button class="copy-button" type="button" data-copy-command><span class="copy-label" aria-live="polite">复制脚本</span><span aria-hidden="true">⧉</span></button></div><pre><code>${html(windowsCommand)}</code></pre></div><div class="command-card"><div class="command-label"><span>macOS / Linux · Terminal</span><button class="copy-button" type="button" data-copy-command><span class="copy-label" aria-live="polite">复制脚本</span><span aria-hidden="true">⧉</span></button></div><pre><code>${html(unixCommand)}</code></pre></div></div>
 </div></section>
 <section class="section faq-section" id="faq" aria-labelledby="faq-title"><div class="shell faq-layout"><div class="faq-intro"><p class="section-kicker">03 / BEFORE YOU CONNECT</p><h2 id="faq-title">开始之前，<br>你可能还想知道。</h2><p>下载、授权和日常使用，各自清楚。<br>不隐藏限制，也不增加多余步骤。</p></div><div class="faq-list">
+  ${manualMigration ? `<details open><summary>我已经安装旧版本，应该怎么升级到 ${catalog.version}？</summary><div class="faq-answer"><p>直接从本页下载对应平台的 ${catalog.version} 安装包并覆盖安装，<strong>不要先卸载旧版本</strong>。这次需要人工安装一次，是因为更新签名信任根已经迁移，旧客户端无法自动验证新的更新签名。</p><p>覆盖安装会保留现有 Access Key、Device Binding、项目目录、暂停意图和自动更新设置。完成 ${catalog.version} 后，后续版本即可继续使用新的签名体系正常更新。</p></div></details>` : ''}
   <details><summary>还没有 Access Key，可以先下载吗？</summary><div class="faq-answer"><p>可以。所有员工使用同一个固定下载站，无需 GitHub 登录、临时票据或管理员生成下载链接。下载和安装不等于获得远程访问权限。</p><p>安装后向管理员获取 Access Key，在 Team DevSpace 内完成设备绑定。下载站不接收 Access Key，也不要把它写进下载链接或发到公开群聊。</p></div></details>
   <details><summary>Mac 应该选 Apple Silicon 还是 Intel？</summary><div class="faq-answer"><p>在 Mac 左上角的 Apple 菜单中打开“关于本机”。显示 Apple M 系列芯片，选择 Apple Silicon；显示 Intel 处理器，选择 Intel。</p><p>浏览器能提供可靠芯片信息时，首页会自动选择；Safari 等无法提供架构信息时，请手动选择，不会仅凭“Intel Mac”浏览器标识猜测。也可使用上方 macOS / Linux 安装命令，脚本会识别芯片架构，包括 Apple Silicon 上的 Rosetta 环境。</p></div></details>
   <details open><summary>安装时出现系统安全提示，怎么办？</summary><div class="faq-answer" id="security"><p>当前采用 internal-free 团队内部分发模式，不提供 Windows 公共代码签名信誉，也未提供 Apple Developer ID 签名与公证。首次安装可能被系统提示或阻止，这不是已经通过商店认证的软件。</p><p>先确认安装包来自本站，核对对应版本的 SHA-256；仍被阻止时，请联系管理员确认安装方式。不要关闭 Gatekeeper、导入陌生根证书或关闭系统防护。</p><p>SHA-256 可检查文件损坏和版本混用，但其信任来自同一个 HTTPS 下载站，不能替代独立数字签名或担保服务器未被入侵。</p></div></details>

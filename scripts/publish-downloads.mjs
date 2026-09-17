@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
+import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { run, sha256File, sourceIdentity } from './build-utils.mjs';
 import { DOWNLOAD_TARGETS, packageName, VERSION, validateCatalog, httpsOrigin, packageUrls, downloadPage } from './download-catalog.mjs';
 import { installScripts } from './download-commands.mjs';
@@ -80,9 +80,9 @@ export async function prepareSite(directory, output, catalog, origin, notes, {
   await writeFile(join(output, 'SHA256SUMS'), sums.join(''));
 }
 
-export async function prepareHomepage(output, catalog, origin) {
+export async function prepareHomepage(output, catalog, origin, { manualMigration = false } = {}) {
   validateCatalog(catalog); httpsOrigin(origin);
-  const page = downloadPage(catalog, origin, { stable: true });
+  const page = downloadPage(catalog, origin, manualMigration ? { manualMigration: true } : { stable: true });
   // Fail locally before upload if the page exceeds the existing read-back verifier.
   if (Buffer.byteLength(page) > 65536) throw new Error('Homepage exceeds the 64 KiB verification budget');
   await rm(output, { recursive: true, force: true });
@@ -168,9 +168,9 @@ async function stableCheck(origin, catalog) {
   }
 }
 
-async function publishHomepage({ origin, catalog, server, command }) {
+async function publishHomepage({ origin, catalog, server, command, manualMigration = false, expectedStableVersion = catalog.version }) {
   const output = resolve('build', 'downloads', 'homepage');
-  const page = await prepareHomepage(output, catalog, origin);
+  const page = await prepareHomepage(output, catalog, origin, { manualMigration });
   const uploadId = randomUUID().replaceAll('-', '');
   try {
     await command('site-stage', uploadId);
@@ -179,7 +179,7 @@ async function publishHomepage({ origin, catalog, server, command }) {
       relative(process.cwd(), join(output, 'download-site.js')).replaceAll('\\', '/'),
       relative(process.cwd(), join(output, 'devspace-logo-light.png')).replaceAll('\\', '/'),
       `${server.sshHost}:${server.serverRoot}/.incoming/site-${uploadId}/`], { timeout: 120000 });
-    await command('site-publish', uploadId, catalog.version);
+    await command('site-publish', uploadId, expectedStableVersion);
   } catch (error) {
     await command('site-discard', uploadId).catch(() => {});
     throw error;
@@ -203,10 +203,10 @@ export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: {
     publish: { type: 'boolean' }, 'versioned-only': { type: 'boolean' }, 'full-https-verify': { type: 'boolean' }, activate: { type: 'string' }, 'init-server': { type: 'boolean' }, 'site-only': { type: 'boolean' }, preview: { type: 'boolean' },
     config: { type: 'string', default: '.runtime/downloads.json' }, version: { type: 'string' },
-    commit: { type: 'string' }, directory: { type: 'string' }, 'public-release-directory': { type: 'string' }, 'signed-update': { type: 'string' }, help: { type: 'boolean' },
+    commit: { type: 'string' }, directory: { type: 'string' }, 'public-release-directory': { type: 'string' }, 'signed-update': { type: 'string' }, 'migration-homepage': { type: 'string' }, help: { type: 'boolean' },
   } });
   if (values.help) {
-    console.log('Prepare accepted release: npm run downloads:publish -- --signed-update <verified-update.json>\nInitialize existing Caddy site (DNS must be ready): npm run downloads:deploy\nPublish + verify HTTPS + activate: npm run downloads:publish -- --publish --signed-update <verified-update.json>\nPublish an immutable GitHub Release to /releases/<version>/ without changing stable: npm run downloads:publish -- --publish --versioned-only --public-release-directory <downloaded-release-directory>\nPreview the homepage locally from the active catalog: npm run downloads:preview\nRefresh only the public homepage: npm run downloads:site\nRecover an unpruned staged release: npm run downloads:publish -- --activate <version>\nOptional full HTTPS hash verification: add --full-https-verify\nImport accepted artifacts: add --version <version> --commit <source-commit> --directory <four-target-directory>\nProduction signing is completed in the protected GitHub public-release Environment; the download publisher consumes already-signed metadata and never owns the private signing key.');
+    console.log('Prepare accepted release: npm run downloads:publish -- --signed-update <verified-update.json>\nInitialize existing Caddy site (DNS must be ready): npm run downloads:deploy\nPublish + verify HTTPS + activate: npm run downloads:publish -- --publish --signed-update <verified-update.json>\nPublish an immutable GitHub Release to /releases/<version>/ without changing stable: npm run downloads:publish -- --publish --versioned-only --public-release-directory <downloaded-release-directory>\nPublish a one-time manual migration homepage while stable/update feed stays on the old trust root: npm run downloads:publish -- --site-only --migration-homepage <version>\nPreview the homepage locally from the active catalog: npm run downloads:preview\nRefresh only the public homepage: npm run downloads:site\nRecover an unpruned staged release: npm run downloads:publish -- --activate <version>\nOptional full HTTPS hash verification: add --full-https-verify\nImport accepted artifacts: add --version <version> --commit <source-commit> --directory <four-target-directory>\nProduction signing is completed in the protected GitHub public-release Environment; the download publisher consumes already-signed metadata and never owns the private signing key.');
     return;
   }
   const origin = httpsOrigin(release.distribution.origin);
@@ -215,6 +215,8 @@ export async function main(argv = process.argv.slice(2)) {
   if (values.directory && values['public-release-directory']) throw new Error('Choose accepted artifacts OR a final public release directory, not both');
   if (values['versioned-only'] && (!values.publish || !values['public-release-directory'])) throw new Error('--versioned-only requires --publish and --public-release-directory');
   if (values['public-release-directory'] && values['signed-update']) throw new Error('Final public release import uses its own signed update metadata');
+  if (values['migration-homepage'] && !values['site-only']) throw new Error('--migration-homepage is a site-only operation');
+  if (values['migration-homepage'] && !VERSION.test(values['migration-homepage'])) throw new Error('Invalid migration homepage version');
   if (values.activate && (values.commit || values.directory || values['public-release-directory'] || values.version || values.publish || values['versioned-only'] || values['init-server'] || values['site-only'] || values['signed-update'])) throw new Error('Activation is a separate operation');
   if (values['site-only'] && (values.publish || values['versioned-only'] || values['init-server'] || values.commit || values.directory || values['public-release-directory'] || values.version || values['signed-update'])) throw new Error('Homepage refresh is a separate operation');
   if (values.preview) {
@@ -252,9 +254,27 @@ export async function main(argv = process.argv.slice(2)) {
     if (values['site-only']) {
       const identity = sourceIdentity();
       if (identity.sourceDirty || !/^[a-f0-9]{40}$/.test(identity.commit)) throw new Error('Homepage deployment requires a clean committed source tree');
-      const catalog = validateCatalog(JSON.parse(await smallBody(await request(`${origin}/catalog.json`))));
-      await publishHomepage({ origin, catalog, server, command });
-      console.log(JSON.stringify({ homepagePublished: true, version: catalog.version, commit: identity.commit, origin }));
+      const stableCatalogText = await smallBody(await request(`${origin}/catalog.json`));
+      const stableCatalog = validateCatalog(JSON.parse(stableCatalogText));
+      const stableUpdateText = await smallBody(await request(`${origin}/update.json`));
+      if (values['migration-homepage']) {
+        const migrationVersion = values['migration-homepage'];
+        const catalog = validateCatalog(JSON.parse(await smallBody(await request(`${origin}/releases/${migrationVersion}/catalog.json`))));
+        if (catalog.version !== migrationVersion) throw new Error('Migration homepage catalog version mismatch');
+        const signed = await verifySignedCatalog(JSON.parse(await smallBody(await request(`${origin}/releases/${migrationVersion}/update.json`))),
+          release.distribution.updatePublicKey, migrationVersion);
+        if (!isDeepStrictEqual(signed, catalog)) throw new Error('Migration homepage signed catalog differs from published package metadata');
+        await publishHomepage({ origin, catalog, server, command, manualMigration: true, expectedStableVersion: stableCatalog.version });
+        if (await smallBody(await request(`${origin}/catalog.json`)) !== stableCatalogText ||
+            await smallBody(await request(`${origin}/update.json`)) !== stableUpdateText) {
+          throw new Error('Stable catalog/update feed changed while publishing the manual migration homepage');
+        }
+        console.log(JSON.stringify({ homepagePublished: true, manualMigration: true, version: migrationVersion,
+          stableFeedUnchanged: stableCatalog.version, commit: identity.commit, origin }));
+      } else {
+        await publishHomepage({ origin, catalog: stableCatalog, server, command });
+        console.log(JSON.stringify({ homepagePublished: true, version: stableCatalog.version, commit: identity.commit, origin }));
+      }
       return;
     }
     if (remote) initialStable = (await command('current', '', '', true)).stdout.trim();
@@ -268,7 +288,6 @@ export async function main(argv = process.argv.slice(2)) {
       let directory;
       let signedUpdate;
       let sourceMode = 'accepted';
-      let catalog;
       if (values['public-release-directory']) {
         const imported = await verifyPublishedRelease(values['public-release-directory'], {
           expectedVersion: version, expectedCommit: values.commit, expectedProfileSha256: releaseProfileDigest(release),
@@ -325,7 +344,7 @@ export async function main(argv = process.argv.slice(2)) {
     const hasSignature = signatureResponse.status === 200;
     if (hasSignature) {
       const signed = await verifySignedCatalog(JSON.parse(await smallBody(signatureResponse)), release.distribution.updatePublicKey, version);
-      if (JSON.stringify(signed) !== JSON.stringify(catalog)) throw new Error('Signed update catalog differs from published package metadata');
+      if (!isDeepStrictEqual(signed, catalog)) throw new Error('Signed update catalog differs from published package metadata');
     } else {
       await signatureResponse.body?.cancel();
       if (!values.activate || signatureResponse.status !== 404) throw new Error('Published update signature is missing');
