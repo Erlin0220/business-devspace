@@ -268,7 +268,9 @@ try {
   for (let attempt = 0; attempt < 2; attempt++) {
     const code = await execute(installer, ['/S', `/D=${install}`], 240000, softwareEnv);
     canUninstall = true;
-    assert.equal(code, 0, 'Credential-free software installation must succeed');
+    const installDiagnostic = code === 0 ? '' : await readFile(join(install, 'bootstrap-error.log'), 'utf8').catch(async () =>
+      readFile(join(install, 'bootstrap-launch-error.log'), 'utf8').catch(() => 'No bootstrap diagnostic was written'));
+    assert.equal(code, 0, `Credential-free software installation must succeed\n${installDiagnostic.slice(-4000)}`);
     assert.equal(enrollmentCalls, 0, 'Software installation must not enroll a device');
     assert.equal(await exists(join(home, 'state.json')), false, 'Software installation must not invent a device identity');
     assert.equal(await exists(join(install, 'onboarding-error.log')), false);
