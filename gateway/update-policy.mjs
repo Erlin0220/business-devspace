@@ -1,13 +1,15 @@
-import release from '../release.config.json' with { type: 'json' };
 import { boundedJson, compareVersions, UPDATE_VERSION, validateUpdatePolicy, verifySignedCatalog } from '../client/update-policy.mjs';
 import { validateCatalog } from '../client/release-catalog.mjs';
 import { AdminServiceError } from './admin-service.mjs';
 
 const cache = new Map();
 const stableCaches = new Map();
-function distribution(env) {
-  const origin = env.DOWNLOAD_ORIGIN ?? release.distribution.origin;
-  const publicKey = env.UPDATE_PUBLIC_KEY ?? release.distribution.updatePublicKey;
+export function updateDistribution(env) {
+  const origin = env.DOWNLOAD_ORIGIN;
+  const publicKey = env.UPDATE_PUBLIC_KEY;
+  if (typeof origin !== 'string' || typeof publicKey !== 'string') {
+    throw new Error('Update distribution runtime bindings are missing');
+  }
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.origin !== origin || !/^[A-Za-z0-9_-]{43}$/.test(publicKey)) {
     throw new Error('Update distribution is not configured');
@@ -21,7 +23,7 @@ const rules = row => ({ schema: 1, auto: row.auto_version, minimumSupported: row
 const fetchJson = async url => boundedJson(await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(15000) }));
 
 async function fetchStableCatalog(env) {
-  const { origin, publicKey } = distribution(env);
+  const { origin, publicKey } = updateDistribution(env);
   const response = await fetch(`${origin}/update.json`, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
   if (response.status === 404) {
     await response.body?.cancel();
@@ -35,7 +37,7 @@ async function fetchStableCatalog(env) {
 }
 
 async function stableCatalog(env, fresh = false) {
-  const { key } = distribution(env);
+  const { key } = updateDistribution(env);
   if (fresh) return fetchStableCatalog(env);
   const previous = stableCaches.get(key);
   if (previous?.pending) return previous.pending;
@@ -83,7 +85,11 @@ export async function updateRules(env, store, fresh = false) {
   return current.pending;
 }
 
-export function clearUpdatePolicyCache(env) { cache.delete(env.PUBLIC_ORIGIN); stableCaches.delete(distribution(env).key); }
+export function clearUpdatePolicyCache(env) {
+  cache.delete(env.PUBLIC_ORIGIN);
+  try { stableCaches.delete(updateDistribution(env).key); }
+  catch { stableCaches.clear(); }
+}
 
 export async function publicUpdatePolicy(env, store) {
   const [rule, catalog] = await Promise.all([updateRules(env, store), stableCatalog(env)]);
@@ -98,7 +104,7 @@ function validateReleaseIndex(value) {
 }
 
 async function selectableVersions(env, policy) {
-  const { origin, publicKey } = distribution(env);
+  const { origin, publicKey } = updateDistribution(env);
   let candidates;
   try { candidates = validateReleaseIndex(await fetchJson(`${origin}/releases.json`)); }
   catch { candidates = []; }
@@ -128,7 +134,7 @@ export async function adminUpdatePolicy(env, store) {
 }
 
 export async function saveUpdatePolicy(env, store, input) {
-  const { origin, publicKey } = distribution(env);
+  const { origin, publicKey } = updateDistribution(env);
   if (!input || Object.keys(input).sort().join() !== 'auto,enforceAfter,minimumSupported,revision') {
     throw new AdminServiceError(400, 'invalid_update_policy');
   }
