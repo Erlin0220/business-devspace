@@ -14,6 +14,7 @@ import { validateUpdatePolicy, verifySignedCatalog } from '../client/update-poli
 import { administrator } from '../client/admin.mjs';
 import { control } from '../client/http.mjs';
 import { UPGRADE_BASELINES } from './upgrade-baselines.mjs';
+import { verifyPublishedRelease } from './verify-published-release.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
@@ -35,21 +36,29 @@ export async function buildDownloadCatalog(directory, version, commit) {
 
 export async function prepareSite(directory, output, catalog, origin, notes, {
   signer = signUpdateCatalog, signedUpdate, publicKey = release.distribution.updatePublicKey,
+  sourceMode = 'accepted',
 } = {}) {
   validateCatalog(catalog); httpsOrigin(origin);
+  if (!['accepted', 'public-release'].includes(sourceMode)) throw new Error('Unknown release staging source mode');
   await mkdir(output, { recursive: true });
   if ((await readdir(output)).length) throw new Error('Site staging directory must be empty');
   for (const target of DOWNLOAD_TARGETS) {
     const item = catalog.targets[target];
     const dest = join(output, item.file);
-    await cp(join(directory, target, item.file), dest);
+    const source = sourceMode === 'public-release' ? join(directory, item.file) : join(directory, target, item.file);
+    await cp(source, dest);
     if ((await stat(dest)).size !== item.size || await sha256File(dest) !== item.sha256) throw new Error(`Package changed while staging: ${target}`);
     await writeFile(`${dest}.sha256`, `${item.sha256}\n`);
-    // Acceptance contains build/test facts only, never employee state or credentials.
-    const evidence = JSON.parse(await readFile(join(directory, target, 'acceptance.json'), 'utf8'));
-    const { schema, passed, release: version, commit, sourceDirty, releaseProfileSha256, entrypoint, checks, limitations } = evidence;
-    await writeFile(join(output, `acceptance-${target}.json`), `${JSON.stringify({ schema, passed, release: version,
-      target, commit, sourceDirty, releaseProfileSha256, entrypoint, checks, limitations }, null, 2)}\n`);
+    if (sourceMode === 'accepted') {
+      // Acceptance contains build/test facts only, never employee state or credentials.
+      const evidence = JSON.parse(await readFile(join(directory, target, 'acceptance.json'), 'utf8'));
+      const { schema, passed, release: version, commit, sourceDirty, releaseProfileSha256, entrypoint, checks, limitations } = evidence;
+      await writeFile(join(output, `acceptance-${target}.json`), `${JSON.stringify({ schema, passed, release: version,
+        target, commit, sourceDirty, releaseProfileSha256, entrypoint, checks, limitations }, null, 2)}\n`);
+    }
+  }
+  if (sourceMode === 'public-release') {
+    await cp(join(directory, 'PUBLIC-RELEASE-EVIDENCE.json'), join(output, 'PUBLIC-RELEASE-EVIDENCE.json'));
   }
   const scripts = installScripts(catalog, origin);
   const update = signedUpdate ?? await signer(catalog);
@@ -192,21 +201,24 @@ async function publishHomepage({ origin, catalog, server, command }) {
 
 export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: {
-    publish: { type: 'boolean' }, 'full-https-verify': { type: 'boolean' }, activate: { type: 'string' }, 'init-server': { type: 'boolean' }, 'site-only': { type: 'boolean' }, preview: { type: 'boolean' },
+    publish: { type: 'boolean' }, 'versioned-only': { type: 'boolean' }, 'full-https-verify': { type: 'boolean' }, activate: { type: 'string' }, 'init-server': { type: 'boolean' }, 'site-only': { type: 'boolean' }, preview: { type: 'boolean' },
     config: { type: 'string', default: '.runtime/downloads.json' }, version: { type: 'string' },
-    commit: { type: 'string' }, directory: { type: 'string' }, 'signed-update': { type: 'string' }, help: { type: 'boolean' },
+    commit: { type: 'string' }, directory: { type: 'string' }, 'public-release-directory': { type: 'string' }, 'signed-update': { type: 'string' }, help: { type: 'boolean' },
   } });
   if (values.help) {
-    console.log('Prepare accepted release: npm run downloads:publish -- --signed-update <verified-update.json>\nInitialize existing Caddy site (DNS must be ready): npm run downloads:deploy\nPublish + verify HTTPS + activate: npm run downloads:publish -- --publish --signed-update <verified-update.json>\nPreview the homepage locally from the active catalog: npm run downloads:preview\nRefresh only the public homepage: npm run downloads:site\nRecover an unpruned staged release: npm run downloads:publish -- --activate <version>\nOptional full HTTPS hash verification: add --full-https-verify\nImport accepted artifacts: add --version <version> --commit <source-commit> --directory <four-target-directory>\nProduction signing is completed in the protected GitHub public-release Environment; the download publisher consumes already-signed metadata and never owns the private signing key.');
+    console.log('Prepare accepted release: npm run downloads:publish -- --signed-update <verified-update.json>\nInitialize existing Caddy site (DNS must be ready): npm run downloads:deploy\nPublish + verify HTTPS + activate: npm run downloads:publish -- --publish --signed-update <verified-update.json>\nPublish an immutable GitHub Release to /releases/<version>/ without changing stable: npm run downloads:publish -- --publish --versioned-only --public-release-directory <downloaded-release-directory>\nPreview the homepage locally from the active catalog: npm run downloads:preview\nRefresh only the public homepage: npm run downloads:site\nRecover an unpruned staged release: npm run downloads:publish -- --activate <version>\nOptional full HTTPS hash verification: add --full-https-verify\nImport accepted artifacts: add --version <version> --commit <source-commit> --directory <four-target-directory>\nProduction signing is completed in the protected GitHub public-release Environment; the download publisher consumes already-signed metadata and never owns the private signing key.');
     return;
   }
   const origin = httpsOrigin(release.distribution.origin);
   const version = values.activate ?? values.version ?? release.version;
   if (!VERSION.test(version)) throw new Error('Invalid release version');
-  if (values.activate && (values.commit || values.directory || values.version || values.publish || values['init-server'] || values['site-only'] || values['signed-update'])) throw new Error('Activation is a separate operation');
-  if (values['site-only'] && (values.publish || values['init-server'] || values.commit || values.directory || values.version || values['signed-update'])) throw new Error('Homepage refresh is a separate operation');
+  if (values.directory && values['public-release-directory']) throw new Error('Choose accepted artifacts OR a final public release directory, not both');
+  if (values['versioned-only'] && (!values.publish || !values['public-release-directory'])) throw new Error('--versioned-only requires --publish and --public-release-directory');
+  if (values['public-release-directory'] && values['signed-update']) throw new Error('Final public release import uses its own signed update metadata');
+  if (values.activate && (values.commit || values.directory || values['public-release-directory'] || values.version || values.publish || values['versioned-only'] || values['init-server'] || values['site-only'] || values['signed-update'])) throw new Error('Activation is a separate operation');
+  if (values['site-only'] && (values.publish || values['versioned-only'] || values['init-server'] || values.commit || values.directory || values['public-release-directory'] || values.version || values['signed-update'])) throw new Error('Homepage refresh is a separate operation');
   if (values.preview) {
-    if (values.publish || values.activate || values['init-server'] || values['site-only'] || values.commit || values.directory || values.version || values['signed-update']) throw new Error('Homepage preview is a separate read-only operation');
+    if (values.publish || values['versioned-only'] || values.activate || values['init-server'] || values['site-only'] || values.commit || values.directory || values['public-release-directory'] || values.version || values['signed-update']) throw new Error('Homepage preview is a separate read-only operation');
     const catalog = validateCatalog(JSON.parse(await smallBody(await request(`${origin}/catalog.json`))));
     const output = resolve('build', 'downloads', 'homepage-preview');
     const page = await prepareHomepage(output, catalog, origin);
@@ -252,29 +264,52 @@ export async function main(argv = process.argv.slice(2)) {
       if (catalog.version !== version) throw new Error('Historical catalog version mismatch');
     } else {
       const identity = sourceIdentity();
-      if (identity.sourceDirty || !/^[a-f0-9]{40}$/.test(identity.commit)) throw new Error('Publishing requires a clean committed source tree and acceptance of the final installer bytes');
-      const commit = values.commit ?? identity.commit;
+      let commit = values.commit ?? identity.commit;
+      let directory;
+      let signedUpdate;
+      let sourceMode = 'accepted';
+      let catalog;
+      if (values['public-release-directory']) {
+        const imported = await verifyPublishedRelease(values['public-release-directory'], {
+          expectedVersion: version, expectedCommit: values.commit, expectedProfileSha256: releaseProfileDigest(release),
+          publicKey: release.distribution.updatePublicKey,
+        });
+        commit = imported.evidence.commit;
+        catalog = imported.catalog;
+        signedUpdate = imported.signedUpdate;
+        directory = imported.root;
+        sourceMode = 'public-release';
+        const relevant = ['scripts/publish-downloads.mjs', 'scripts/download-catalog.mjs', 'scripts/download-commands.mjs',
+          'assets/download-site.js', 'platform/macos/devspace-logo-light.png', `docs/release-notes-${version}.md`];
+        const changed = execFileSync('git', ['status', '--porcelain', '--', ...relevant], { encoding: 'utf8', windowsHide: true });
+        if (changed.trim()) throw new Error('Release publication generator files have uncommitted changes');
+      } else {
+        if (identity.sourceDirty || !/^[a-f0-9]{40}$/.test(identity.commit)) throw new Error('Publishing requires a clean committed source tree and acceptance of the final installer bytes');
+      }
       if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Invalid source commit');
       const sourceRelease = JSON.parse(execFileSync('git', ['show', `${commit}:release.config.json`], { encoding: 'utf8', windowsHide: true }));
       if (sourceRelease.version !== version || sourceRelease.distribution.targets.slice().sort().join() !== [...DOWNLOAD_TARGETS].sort().join()) throw new Error('Source commit does not describe the requested four-target release');
-      const directory = resolve(values.directory ?? join('release', 'offline', version));
-      await verifyAcceptance({ version, root: directory, targets: DOWNLOAD_TARGETS, expectedCommit: commit,
-        requireFinalWindows: true, requireInstalledUpgrade: true, requireNativeArchitecture: true,
-        expectedProfileSha256: releaseProfileDigest(release) });
-      catalog = await buildDownloadCatalog(directory, version, commit);
+      if (sourceMode === 'accepted') {
+        directory = resolve(values.directory ?? join('release', 'offline', version));
+        await verifyAcceptance({ version, root: directory, targets: DOWNLOAD_TARGETS, expectedCommit: commit,
+          requireFinalWindows: true, requireInstalledUpgrade: true, requireNativeArchitecture: true,
+          expectedProfileSha256: releaseProfileDigest(release) });
+        catalog = await buildDownloadCatalog(directory, version, commit);
+      }
       const output = resolve('build', 'downloads', version);
       await rm(output, { recursive: true, force: true });
-      let signedUpdate;
       if (values['signed-update']) signedUpdate = JSON.parse(await readFile(resolve(values['signed-update']), 'utf8'));
       else if (release.distribution.updatePublicKey !== 'A'.repeat(43)) {
-        throw new Error('Production release preparation requires already-signed update metadata from the protected public-release Environment');
+        if (!signedUpdate) throw new Error('Production release preparation requires already-signed update metadata from the protected public-release Environment');
       }
       let notes;
       try { notes = await readFile(`docs/release-notes-${version}.md`, 'utf8'); }
       catch (error) { if (error.code !== 'ENOENT') throw error; notes = `Team DevSpace ${version}\nSource commit: ${commit}\nRetained accepted release. See catalog.json and acceptance-*.json for exact artifact identity and validation limitations.\n`; }
-      await prepareSite(directory, output, catalog, origin, notes, { signedUpdate });
-      const after = sourceIdentity();
-      if (after.sourceDirty || after.commit !== identity.commit) throw new Error('Source tree changed while preparing the release');
+      await prepareSite(directory, output, catalog, origin, notes, { signedUpdate, sourceMode });
+      if (sourceMode === 'accepted') {
+        const after = sourceIdentity();
+        if (after.sourceDirty || after.commit !== identity.commit) throw new Error('Source tree changed while preparing the release');
+      }
       console.log(JSON.stringify({ prepared: true, version, commit, origin,
         totalBytes: Object.values(catalog.targets).reduce((sum, item) => sum + item.size, 0), output, publish: Boolean(values.publish) }));
       if (!values.publish) return;
@@ -299,6 +334,14 @@ export async function main(argv = process.argv.slice(2)) {
     // No pruning happens until activation, scripts AND homepage verify successfully.
     await command('verify', version);
     await verifyRemote(origin, catalog, { full: Boolean(values['full-https-verify']) });
+    if (values['versioned-only']) {
+      const stableAfter = (await command('current', '', '', true)).stdout.trim();
+      if (stableAfter !== initialStable) throw new Error('Stable changed while publishing a versioned-only trust migration release');
+      console.log(JSON.stringify({ publishedVersionedOnly: true, version, commit: catalog.commit, origin,
+        stableUnchanged: stableAfter, signedUpdates: hasSignature, verifiedAllFourHttpsDeliveryPaths: true,
+        fullHttpsHash: Boolean(values['full-https-verify']) }));
+      return;
+    }
     operator = await administrator();
     if (operator.gateway !== release.gateway) throw new Error('The administrator belongs to a different Gateway');
     publicationToken = randomUUID();

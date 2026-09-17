@@ -56,6 +56,28 @@ also cannot be reconstructed from their public identity. Before deleting an old
 secret store or repository Environment, verify the primary copy and the independent
 recovery path described in `docs/ops/secret-disaster-recovery-2026-09-16.md`.
 
+The historical `WINDOWS_INTERNAL_SIGNING_PFX_*` secrets are not part of the
+current public release contract and are intentionally not migrated into the public
+repository's `production` Environment. Current Windows public releases are accepted
+and published without that internal Publisher identity. Keep the old PFX only with
+the archived private recovery material until its retention period ends;
+reintroducing Windows code signing is a separate trust decision with a separately
+managed identity.
+
+During an updater trust-root migration, immutable accepted bytes can be copied to
+the versioned Aliyun namespace without changing `/stable`, `/catalog.json`,
+`/update.json` or the public homepage. Download the final GitHub Release assets and
+use:
+
+```sh
+npm run downloads:publish -- --publish --versioned-only --public-release-directory <release-directory>
+```
+
+The importer revalidates `PUBLIC-RELEASE-EVIDENCE.json`, package sizes/hashes,
+`SHA256SUMS`, the exact catalog commit/profile and signed `update.json`, then verifies
+the server and HTTPS delivery paths. Existing clients continue to see the old stable
+feed until the operator explicitly performs the later activation.
+
 Restrict the Environment to the reviewed `main` branch. Use an available
 reviewer policy only when it can actually be satisfied; a solo maintainer must
 not be required to approve their own deployment as a separate reviewer. Check
