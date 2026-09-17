@@ -5,7 +5,7 @@ import assets from './assets.mjs';
 import { logRequest } from './observability.mjs';
 import { AdminService, AdminServiceError } from './admin-service.mjs';
 import { adminWeb, adminWebError, AdminWebError } from './admin-web.mjs';
-import { adminUpdatePolicy, publicUpdatePolicy, saveUpdatePolicy, updateRules, publicationLease } from './update-policy.mjs';
+import { adminUpdatePolicy, publicUpdatePolicy, saveUpdatePolicy, updateRules, publicationLease, updateDistribution } from './update-policy.mjs';
 import { UPDATE_VERSION, versionUnsupported, compareVersions } from '../client/update-policy.mjs';
 import { DOWNLOAD_TARGETS } from '../client/release-catalog.mjs';
 import { validateUpdateReport } from '../client/update-report.mjs';
@@ -427,6 +427,8 @@ export default {
           if (!env.RELEASE_VERSION || !env.DEVSPACE_VERSION || !Number.isInteger(controlApiVersion) || controlApiVersion < 1) {
             throw new HttpError(503, 'release_not_configured');
           }
+          try { updateDistribution(env); }
+          catch { throw new HttpError(503, 'release_not_configured'); }
           response = json({ service: 'team-devspace', release: env.RELEASE_VERSION,
             devspace: env.DEVSPACE_VERSION, controlApi: controlApiVersion });
         } else {

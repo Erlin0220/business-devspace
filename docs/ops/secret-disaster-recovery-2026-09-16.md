@@ -84,6 +84,15 @@ evidence and signed catalog while the `stable` symlink remains on 0.2.6. This gi
 employees a fixed trusted manual-install URL without silently changing what existing
 0.2.6 clients see at `/catalog.json` and `/update.json`.
 
+During the 2026-09-17 migration, the public-source Worker briefly lost the runtime
+`DOWNLOAD_ORIGIN` / `UPDATE_PUBLIC_KEY` bindings because the old private bundle had
+embedded production distribution values while the public repository deliberately
+contains placeholder release defaults. The administrator update-policy endpoint then
+failed closed with `service_unavailable`. Recovery restored explicit runtime bindings
+for the still-active 0.2.6 feed and old update public key. Production health now also
+requires these bindings so a future public-source/secret-only deployment cannot look
+healthy while its update control plane silently falls back to source placeholders.
+
 ## Change checklist
 
 Before changing or deleting any production secret:

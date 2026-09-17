@@ -24,6 +24,7 @@ test('public MCP assets bypass the Worker while all control/admin routes remain 
     d1Databases: { DB: 'static-routing-test' }, log: new Log(LogLevel.ERROR),
     bindings: { RELEASE_VERSION: 'test', DEVSPACE_VERSION: '1.0.8', CONTROL_API_VERSION: '1',
       PUBLIC_ORIGIN: 'https://team.example.test', ADMIN_TOKEN: 'a'.repeat(43),
+      DOWNLOAD_ORIGIN: 'https://downloads.example.test', UPDATE_PUBLIC_KEY: 'A'.repeat(43),
       ACCESS_TEAM_DOMAIN: 'https://access.example.test', ACCESS_AUD: 'test' },
     assets: { directory, binding: config.assets.binding,
       routerConfig: { has_user_worker: true, static_routing: {

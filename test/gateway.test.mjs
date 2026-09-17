@@ -34,7 +34,7 @@ async function accessHeaders() {
 const secret = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('hex');
 
-async function fixture(t, { inventoryMigration = true } = {}) {
+async function fixture(t, { inventoryMigration = true, distributionBindings = true } = {}) {
   const adminToken = secret();
   const masterKey = secret();
   const tunnels = new Map();
@@ -60,7 +60,8 @@ async function fixture(t, { inventoryMigration = true } = {}) {
     bindings: { ADMIN_TOKEN: adminToken, MASTER_KEY: masterKey, CF_API_TOKEN: secret(),
       CF_ACCOUNT_ID: 'a'.repeat(32), CF_ZONE_ID: 'b'.repeat(32), DEVICE_DOMAIN: 'example.test',
       PUBLIC_ORIGIN: 'https://team.example.test', RELEASE_VERSION: '0.1.0', DEVSPACE_VERSION: '1.0.8', CONTROL_API_VERSION: '1',
-      ACCESS_TEAM_DOMAIN: ACCESS_ISSUER, ACCESS_AUD },
+      ACCESS_TEAM_DOMAIN: ACCESS_ISSUER, ACCESS_AUD,
+      ...(distributionBindings ? { DOWNLOAD_ORIGIN: release.distribution.origin, UPDATE_PUBLIC_KEY: updateTestPublicKey } : {}) },
     outboundService: async request => {
       const url = new URL(request.url);
       if (url.origin === release.distribution.origin) {
@@ -280,6 +281,13 @@ test('one Worker serves health and public assets with consistent headers without
   assert.equal(requestOperation('POST', '/v1/enrollment/preflight'), 'enrollment_preflight');
   assert.equal(requestOperation('POST', '/v1/device/release'), 'device_release');
   assert.equal(requestOperation('POST', '/private-user-content'), 'not_found');
+});
+
+test('health fails closed when production update distribution bindings are missing', async t => {
+  const f = await fixture(t, { distributionBindings: false });
+  const response = await f.mf.dispatchFetch('https://team.example.test/health');
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, 'release_not_configured');
 });
 
 test('Contract removes legacy status while status-v2 stays authenticated across pause, minimum support and rebinding', async t => {
