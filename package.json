@@ -76,11 +76,11 @@
     }
   },
   "devDependencies": {
-    "@clack/prompts": "1.5.1",
-    "esbuild": "0.28.1",
-    "npm": "11.19.1",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@clack/prompts": "1.8.1",
+    "esbuild": "0.28.2",
+    "npm": "12.0.2",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "miniflare": "4.20260730.0",
-    "wrangler": "4.130.0"
+    "wrangler": "4.131.2"
   }
 }
