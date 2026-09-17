@@ -106,10 +106,13 @@ for (const required of [
 ]) {
   if (!deployWorkflow.includes(required)) throw new Error(`GitHub Action must stay on its reviewed Node 24 pin: ${required}`);
 }
-if (!publicReleaseWorkflow.includes('environment: public-release') ||
+if ((publicReleaseWorkflow.match(/environment: public-release/g) ?? []).length < 2 ||
     !publicReleaseWorkflow.includes('secrets.TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM') ||
     !publicReleaseWorkflow.includes('scripts/prepare-signed-update.mjs')) {
-  throw new Error('Production update metadata must be signed only inside the protected public-release Environment');
+  throw new Error('Native acceptance and production update signing must share the protected public-release Environment');
+}
+if (/gh release delete[^\n]*--cleanup-tag/.test(publicReleaseWorkflow)) {
+  throw new Error('Draft Release cleanup must not try to delete a Git tag that does not exist until publication');
 }
 if (/homedir\(|defaultSigningKey|\.team-devspace-admin/.test(updateSigning) ||
     !updateSigning.includes('TEAM_DEVSPACE_UPDATE_SIGNING_KEY_PEM')) {
