@@ -51,6 +51,7 @@ jobs:
 
   build:
     needs: gate
+    environment: public-release
     permissions:
       contents: write
     strategy:
@@ -200,7 +201,7 @@ jobs:
           tag="v$VERSION"
           published=0
           cleanup() {
-            if [ "$published" = 0 ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true; fi
+            if [ "$published" = 0 ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes || true; fi
           }
           trap cleanup ERR
           node --input-type=module - <<'NODE' > build/public-release/issue-2-release-evidence.md
@@ -253,4 +254,4 @@ jobs:
         run: |
           tag="v$VERSION"
           draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
-          if [ "$draft" = true ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag; fi
+          if [ "$draft" = true ]; then gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes; fi

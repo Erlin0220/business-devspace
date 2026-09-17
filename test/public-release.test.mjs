@@ -11,6 +11,9 @@ test('public release builds production-profile bytes once, accepts them, then pu
   assert.match(publish, /gh issue comment 2/);
   assert.match(publish, /gh issue close 2/);
   assert.match(workflow, /environment: public-release/);
+  const build = workflow.slice(workflow.indexOf('\n  build:'), workflow.indexOf('\n  publish:'));
+  assert.match(build, /environment: public-release/,
+    'Native build/acceptance jobs must resolve the same protected release profile as publish');
   assert.match(workflow, /TEAM_DEVSPACE_RELEASE_PROFILE_JSON: \$\{\{ vars\.TEAM_DEVSPACE_RELEASE_PROFILE \}\}/);
   assert.match(workflow, /requireProductionProfile/);
   assert.match(workflow, /acceptance:platform -- --direct-windows-installer/);
@@ -30,5 +33,7 @@ test('public release builds production-profile bytes once, accepts them, then pu
   assert.ok(publish.indexOf('gh release edit "$tag"') < publish.indexOf('gh issue close 2'),
     'Issue #2 closes only after the exact Draft Release becomes the public immutable release');
   assert.match(workflow, /Remove an unpublished Draft Release after any failed candidate run/);
+  assert.doesNotMatch(workflow, /gh release delete[^\n]*--cleanup-tag/,
+    'Draft releases do not have a published Git tag yet; cleanup must not fail while deleting a nonexistent tag ref');
   assert.doesNotMatch(workflow, /pull_request_target/);
 });
