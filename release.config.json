@@ -1,5 +1,5 @@
 {
-  "version": "0.2.8",
+  "version": "0.2.9",
   "gateway": "https://gateway.example.com",
   "devspaceVersion": "1.0.8",
   "controlApiVersion": 1,
