@@ -27,7 +27,9 @@ Worker 内提前返回错误仍消耗 Worker 请求，所以 Contract 使用 Edg
 
 Windows/macOS 托盘的“软件更新…”进入现有本机设置页；用户可检查、更新、关闭自动更新。CLI 为 `update check|apply|status|repair` 和 `update auto on|off`，沿用已安装的 Team DevSpace 命令入口。`update repair` 是显式重装当前版本的签名安装包，不是连接 Repair，不自动触发，也不会降级。该版本已经从服务器回收时，应使用固定下载站升级，不能绕过签名或换一个来源。关闭自动更新不等于免除最低版本要求。
 
-手动检查发现新版本时，本机设置页读取固定下载源 `/releases/<version>/release-notes.txt` 的有界摘要并自动打开确认框；完整说明仍直接链接下载源，读取失败不阻止签名更新。后台发现只更新入口提示，不弹确认框；检查操作本身永不安装。确认绑定当次目标版本，下载完成后若 stable 已变化则要求重新检查，不能静默安装另一个版本。
+手动检查发现新版本时，本机设置页读取固定下载源 `/releases/<version>/release-notes.txt` 的有界摘要并自动打开确认框；完整说明仍直接链接下载源，读取失败不阻止签名更新。后台发现只更新入口提示，不弹确认框；检查操作本身永不安装。确认绑定当次目标版本，下载完成后若 stable 已变化则要求重新检查，不能静默安装另一个版本。“稍后”只关闭本次确认，不安装、不改变自动更新偏好或管理员策略；页面会提示可从“软件更新”继续，现有更新按钮和显式“检查更新”都可重新打开当前目标版本。后台检查不会因为同一可选版本反复弹框，也不保存“忽略此版本”或额外 snooze 定时器。
+
+最低支持版本在生效前显示最低版本与本地化生效时间，明确它是未来要求；生效后本机设置持续显示“当前客户端版本已停止支持”，并说明升级后可恢复新的远程工作。这个必需升级提示与确认弹窗相互独立，点“稍后”不会隐藏它。最低版本门禁仍由 Gateway 对新的远程工作执行，本机设置、日志、诊断和更新恢复入口继续可用。
 
 Local WebUI listens on loopback only. `53682` is the preferred first port; the selected port is persisted in private `control-endpoint.json` and reused across normal restarts/upgrades. A short-lived old owner is retried for a bounded period, while a persistent collision migrates to a browser-safe high port and stores the new endpoint. If an existing endpoint migrates, rotate its local capability and open the new Control Center; the abandoned origin must not keep a credential accepted by the new endpoint. Control Center port/assets/browser failures affect only that auxiliary surface and must not terminate Tray, Runtime, Bridge, or Tunnel. The private capability still survives normal upgrades and is delivered only through the URL fragment; Host, Origin, Fetch Site, Authorization and CSP checks remain unchanged.
 
@@ -35,11 +37,13 @@ Local WebUI listens on loopback only. `53682` is the preferred first port; the s
 
 自动更新只使用管理员批准的 auto，执行前重新确认策略与本机偏好。下载可以先完成，激活仍由本机操作和 Bridge 的 admission gate 把关；返回的延迟原因也会保留。忙碌后每十分钟只先重新检查本机操作/Bridge readiness，仍忙时不重新拉取策略或扫描整个安装包。macOS 已准备、等待系统授权的状态不会每次唤醒都重复准备。该 gate 不承担安装激活、版本切换或回滚。Gateway 保留经过设备认证的 `client_update_in_progress`，附带 30 秒 `Retry-After`，不把它误报成设备离线，也不透传上游错误正文。
 
-Windows 使用当前用户、非提权、无计划触发器的一次性系统任务交接安装器，复用已有 GUI launcher，避免托盘 Job Object 杀死安装器或闪出控制台。任务执行后删除自身。Linux 使用现有 user systemd 的临时单元或无 systemd 环境下的独立安装进程。二者最终都调用现有 installer/bootstrap。
+Windows 使用当前用户、非提权的一次性系统任务交接安装器，复用已有 GUI launcher，避免托盘 Job Object 杀死安装器或闪出控制台。任务带有仅用于定义过期边界的惰性触发器和自动删除设置；删除任务不会终止已经运行的安装动作。Linux 使用现有 user systemd 的临时单元或无 systemd 环境下的独立安装进程。二者最终都调用现有 installer/bootstrap。
 
 macOS 自动检查和准备更新，但安装仍需用户确认原生 PKG 的系统授权；不引入特权 helper，不绕过 Gatekeeper，也不声称完全静默更新。关闭原生安装窗口不会留下持续暂停远程访问的状态。
 
-更新不重写 Access Key、Device Binding、Current Project Root 或暂停意图。实际候选验证、active pointer 切换、原生启动入口刷新与失败恢复仍由现有安装事务负责。安装结果和延迟原因在本机设置中展示。检查和安装使用不同的锁身份；安装锁一直覆盖异步系统交接。未确认的安装尝试在请求策略或扫描安装包之前拒绝重复执行。Windows/Linux 交接结果携带 attemptId，旧任务的结果不能解除新任务的防重入保护。调度器保存实际准备/交接的目标版本，不能用较早检查缓存中的 auto 覆盖它。
+更新不重写 Access Key、Device Binding、Current Project Root 或暂停意图。实际候选验证、active pointer 切换、原生启动入口刷新与失败恢复仍由现有安装事务负责。安装结果和延迟原因在本机设置中展示。检查、安装、本机生命周期与无 systemd keeper 的进程互斥使用 SQLite 原生文件锁：锁数据库文件可以长期存在，但只有活进程持有的事务才代表所有权；进程退出或崩溃后由操作系统立即释放，不依赖 heartbeat、mtime 或 stale 超时。并发生命周期/更新分别映射为 `lifecycle_busy` / `update_busy`，自动更新把两者投影为 `local_operation_active` 短周期重试，不向用户暴露底层锁库错误。旧版本遗留的 `.apply.lock`、`.check.lock`、`.lifecycle.lock` 或 standalone `.lock` 工件不再是活动所有权事实，也不需要通过递归删除来迁移。
+
+进程锁只回答“此刻谁可以执行本机变更”，不替代跨重启的安装事实。安装锁一直覆盖异步系统交接；在交接前先持久化的 `attempt.json`/`attemptId` 继续防止进程崩溃后重复启动安装器。未确认的安装尝试在请求策略或扫描安装包之前拒绝重复执行；锁已经释放也不能绕过 `installer_pending`。Windows/Linux 交接结果携带 attemptId，旧任务的结果不能解除新任务的防重入保护。调度器保存实际准备/交接的目标版本，不能用较早检查缓存中的 auto 覆盖它。
 
 低频检查会回收不再需要的规范下载文件，保留当前版本、stable/auto 和仍被交接记录引用的安装包。清理与 apply 共享锁；不递归删除未知目录/文件，不跟随版本目录中的符号链接。退出遗留且超过一天的规范 `.part` 可回收。这不是已安装 payload 的回滚策略。
 

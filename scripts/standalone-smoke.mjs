@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
-import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -195,12 +195,12 @@ writeFileSync(process.argv[2], String(child.pid)); child.unref();\n`);
   await cli('start');
   assert.ok(await isSameProcess(await processIdentity(process.pid)), 'a reused PID must never signal the test runner');
   await cli('stop');
+  // Old proper-lockfile artifacts are no longer ownership facts. An upgrade
+  // may legitimately leave one behind; it must not strand the new keeper.
   await mkdir(join(runtimeDirectory, 'runtime.lock'));
-  await assert.rejects(cli('start'), /acquiring ownership/);
-  const old = new Date(Date.now() - 60000);
-  await utimes(join(runtimeDirectory, 'runtime.lock'), old, old);
   await cli('start');
-  console.log('PASS keeper crash/orphan repair, stale PID and fresh/stale lock handling');
+  assert.equal((await status()).ready, true);
+  console.log('PASS keeper crash/orphan repair, stale PID and legacy lock-artifact compatibility');
 
   await cli('suspend');
   await cli('start');

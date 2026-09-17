@@ -142,6 +142,10 @@
         <div><h3 id="update-description" role="status">尚未检查软件更新</h3><p id="update-detail" class="hint">版本检查不会中断正在执行的远程请求。</p></div>
         <div class="update-actions"><button id="update-check" class="secondary">检查更新</button><button id="update-apply" disabled>更新并重新连接</button></div>
       </article>
+      <aside id="update-required-callout" class="update-required-callout" aria-live="polite" hidden>
+        <strong id="update-required-title">当前客户端版本已停止支持</strong>
+        <p id="update-required-detail">请升级后恢复新的远程工作。本机设置、日志、诊断和更新恢复仍可使用。</p>
+      </aside>
       <div id="update-notes" class="settings-group release-notes" hidden>
         <div class="release-notes-heading"><strong>本次更新要点</strong><a id="update-notes-link" target="_blank" rel="noopener noreferrer">查看完整更新说明 ↗</a></div>
         <ul id="update-notes-list"></ul><p id="update-notes-fallback" class="hint" hidden>暂时无法读取更新说明；这不会阻止检查或安装已签名的更新。</p>
