@@ -28,6 +28,15 @@ test('build downloads bound transfer size and retain HTTPS across redirects befo
   assert.match(source, /url\.username \|\| url\.password/);
 });
 
+test('build downloads can resume slow pinned binaries across the full retry budget', async () => {
+  const source = await readFile('scripts/build-utils.mjs', 'utf8');
+  assert.match(source, /const DOWNLOAD_RETRIES = 3;/);
+  assert.match(source, /const DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS = 600;/);
+  assert.match(source, /'--continue-at', '-'/);
+  assert.match(source, /timeout: DOWNLOAD_PROCESS_TIMEOUT_MS/);
+  assert.match(source, /\(DOWNLOAD_RETRIES \+ 1\) \* DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS/);
+});
+
 test('Mach-O release gate reads the binary minimum macOS version instead of trusting an environment variable', async t => {
   const work = await mkdtemp(join(tmpdir(), 'tds-macho-'));
   t.after(() => rm(work, { recursive: true, force: true }));

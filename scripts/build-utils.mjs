@@ -4,6 +4,15 @@ import { access, mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 
+const DOWNLOAD_RETRIES = 3;
+const DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS = 600;
+const DOWNLOAD_RETRY_DELAY_SECONDS = 2;
+// Keep the parent timeout strictly larger than curl's complete retry budget.
+// Otherwise a slow first transfer can consume --max-time and make --retry
+// ineffective, which is especially painful for the larger Windows binaries.
+const DOWNLOAD_PROCESS_TIMEOUT_MS = ((DOWNLOAD_RETRIES + 1) * DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS +
+  DOWNLOAD_RETRIES * DOWNLOAD_RETRY_DELAY_SECONDS + 30) * 1000;
+
 export async function sha256File(path) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -90,9 +99,10 @@ export async function downloadPinned(artifact, cache) {
   try {
     const curl = process.platform === 'win32' ? 'curl.exe' : 'curl';
     await run(curl, ['--fail', '--location', '--proto', '=https', '--proto-redir', '=https', '--tlsv1.2',
-      '--retry', '4', '--retry-all-errors', '--retry-delay', '2', '--connect-timeout', '30', '--max-time', '240',
+      '--retry', String(DOWNLOAD_RETRIES), '--retry-all-errors', '--retry-delay', String(DOWNLOAD_RETRY_DELAY_SECONDS),
+      '--connect-timeout', '30', '--max-time', String(DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS), '--continue-at', '-',
       '--max-filesize', String(256 * 1024 * 1024),
-      '--output', temporary, artifact.url], { timeout: 270000 });
+      '--output', temporary, artifact.url], { timeout: DOWNLOAD_PROCESS_TIMEOUT_MS });
     const size = (await stat(temporary)).size;
     if (size <= 0 || size > 256 * 1024 * 1024) throw new Error('Binary download exceeds release size limit');
     if (await sha256File(temporary) !== artifact.sha256) throw new Error(`Downloaded binary failed SHA-256 verification: ${basename(target)}`);
