@@ -116,3 +116,20 @@ test('manual update state stays tab-neutral and a verified latest notice is temp
   assert.equal(controller.snapshot().notice, '当前已是最新版本');
   await delay(40); assert.equal(controller.snapshot().notice, undefined);
 });
+
+test('required update policy keeps local recovery and settings surfaces available', async t => {
+  const controller = createDesktopController('unused', { operations: {
+    status: async () => healthy,
+    'update-check': async () => ({ available: true, required: true, automatic: true,
+      policy: { stable: '0.2.9', auto: '0.2.9', minimumSupported: '0.2.9',
+        enforceAfter: new Date(Date.now() - 60000).toISOString() } }),
+  } });
+  t.after(() => controller.dispose());
+  await controller.dispatch('update-check');
+  const view = controller.snapshot();
+  assert.equal(view.updates.required, true);
+  assert.equal(view.logsEnabled, true);
+  assert.equal(view.diagnosticsEnabled, true);
+  assert.equal(view.switchKeyEnabled, true);
+  assert.equal(view.exitEnabled, true);
+});

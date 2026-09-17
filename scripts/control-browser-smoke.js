@@ -92,9 +92,12 @@ async (page) => {
         automaticResult: { deferred: true, message: '当前有远程任务，自动更新已延后' },
         policy: { stable: '0.2.6', minimumSupported: null, enforceAfter: null } },
       { state: 'available', badge: '新版本 0.2.6', title: '新版本 0.2.6 可用', detail: '自动更新已延后', enabled: true }],
+      [{ available: true, required: false, checkedAt: '2026-09-15T00:54:00.000Z', automatic: true, requiresAuthorization: false,
+        policy: { stable: '0.2.6', minimumSupported: '0.2.6', enforceAfter: '2099-09-18T00:00:00.000Z' } },
+      { state: 'available', badge: '新版本 0.2.6', title: '新版本 0.2.6 可用', detail: '当前仍可远程工作', enabled: true, grace: true }],
       [{ available: true, required: true, checkedAt: '2026-09-15T00:54:00.000Z', automatic: true, requiresAuthorization: false,
         policy: { stable: '0.2.6', minimumSupported: '0.2.6', enforceAfter: '2026-09-14T00:00:00.000Z' } },
-      { state: 'required', badge: '需要升级', title: '当前版本需要升级', detail: '最低支持 0.2.6', enabled: true }],
+      { state: 'required', badge: '需要升级', title: '当前版本需要升级', detail: '最低支持 0.2.6', enabled: true, required: true }],
       [{ available: false, required: false, automatic: true, error: '无法获取更新策略，请检查网络后重试', policy: { stable: '0.2.5' } },
       { state: 'error', badge: '检查失败', title: '检查更新失败', detail: '无法获取更新策略', enabled: false }],
       [{ available: true, required: false, checkedAt: '2026-09-15T00:54:00.000Z', automatic: true, requiresAuthorization: false,
@@ -123,6 +126,20 @@ async (page) => {
         `update UI preserves ${expected.detail} detail`);
       check((await updatePage.locator('#update-apply').isEnabled()) === expected.enabled,
         `update action availability matches ${expected.state}`);
+      check((await updatePage.locator('#update-required-callout').isVisible()) === Boolean(expected.required),
+        `required update callout visibility matches ${expected.state}`);
+      if (expected.grace) {
+        check((await updatePage.locator('#update-detail').textContent()).includes('生效'),
+          'grace-period update state shows an explicit enforcement time');
+      }
+      if (expected.required) {
+        check((await updatePage.locator('#update-required-callout').textContent()).includes('已停止支持') &&
+          (await updatePage.locator('#update-required-callout').textContent()).includes('新的远程工作'),
+        'enforced minimum version explains the remote-work consequence');
+        await updatePage.locator('[data-view-target="diagnostics"]').click();
+        check(await updatePage.locator('#logs').isEnabled() && await updatePage.locator('#diagnostics').isEnabled(),
+          'required update keeps local logs and diagnostics available');
+      }
       await updatePage.close();
     }
 
@@ -168,6 +185,11 @@ async (page) => {
     await p.locator('#update-later').click();
     check(await p.locator('#update-confirmation').isHidden(), 'Later closes the modal without installing');
     check(await p.evaluate(() => document.activeElement.id === 'update-check'), 'closing the modal restores focus to its trigger');
+    check((await p.locator('#feedback').textContent()).includes('已稍后处理'), 'Later explains where the update can be resumed');
+    check(await p.locator('#update-apply').isEnabled(), 'Later keeps the current update action available');
+    await p.locator('#update-apply').click(); await p.locator('#update-confirmation').waitFor({ state: 'visible' });
+    check((await p.locator('#update-modal-title').textContent()).includes('0.2.6'), 'the current target can be reopened explicitly after Later');
+    await p.locator('#update-later').click();
 
     const notesFailure = await context.newPage();
     await notesFailure.route('**/api/release-notes?*', route => route.fulfill({ status: 200, contentType: 'application/json',

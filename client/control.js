@@ -9,6 +9,12 @@ let activeAction, modalVersion, modalReturnFocus, notesGeneration = 0, noticeTim
 const notesCache = new Map();
 const RECONNECT_KEY = 'tds-update-reconnect';
 const RECONNECT_LIMIT = 35 * 60 * 1000;
+function compareVersions(left, right) {
+  const a = String(left ?? '').split('.').map(Number), b = String(right ?? '').split('.').map(Number);
+  if (a.length !== 3 || b.length !== 3 || [...a, ...b].some(value => !Number.isSafeInteger(value) || value < 0)) return 0;
+  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
+  return 0;
+}
 function readReconnect() {
   try {
     const value = JSON.parse(sessionStorage.getItem(RECONNECT_KEY));
@@ -195,6 +201,10 @@ function render(state) {
   $('overview-runtime-state').textContent = state.status === 'ready' ? '所有系统服务运行正常' : state.summary.replace(/^Team DevSpace /, '');
   $('overview-runtime-meta').textContent = `${platformName} ${state.architecture}`;
   const updates = state.updates;
+  const minimum = updates?.policy?.minimumSupported;
+  const enforcement = updates?.policy?.enforceAfter ? Date.parse(updates.policy.enforceAfter) : NaN;
+  const belowMinimum = Boolean(minimum && compareVersions(state.version, minimum) < 0);
+  const graceWarning = Boolean(!updates?.required && belowMinimum && Number.isFinite(enforcement) && enforcement > Date.now());
   $('nav-update-indicator').hidden = !(updates?.available || updates?.required);
   const updateState = updates?.error ? 'error' : updates?.required ? 'required' : updates?.available ? 'available' : 'current';
   $('update-state-icon').dataset.state = updateState;
@@ -217,6 +227,7 @@ function render(state) {
   else if (updates?.checkedAt) updateDetails.push(`当前版本 ${state.version}`, `上次检查 ${new Date(updates.checkedAt).toLocaleString()}`);
   else updateDetails.push('版本检查不会中断正在执行的远程请求。');
   if (updates?.policy?.minimumSupported && !updates.required) updateDetails.push(`最低支持 ${updates.policy.minimumSupported} · ${new Date(updates.policy.enforceAfter).toLocaleString()} 生效`);
+  if (graceWarning) updateDetails.push('当前仍可远程工作，请在生效前完成升级');
   if (updates?.available && updates.automaticResult?.deferred) updateDetails.push(updates.automaticResult.message);
   if (updates?.lastInstall && updates.lastInstall.exitCode !== 0) updateDetails.push('上次安装未完成，请重新更新或运行固定下载站的安装包。');
   if (updates?.installation?.status === 'installing') updateDetails.push(`正在安装 ${updates.installation.version}，等待服务重新连接`);
@@ -225,6 +236,11 @@ function render(state) {
   if (updates?.installation?.status === 'failed') updateDetails.push(`安装 ${updates.installation.version} 未完成，可重新检查后重试`);
   if (updates?.installation?.status === 'expired') updateDetails.push(updates.installation.message);
   $('update-detail').textContent = updateDetails.join(' · ');
+  $('update-required-callout').hidden = !updates?.required;
+  if (updates?.required) {
+    $('update-required-title').textContent = '当前客户端版本已停止支持';
+    $('update-required-detail').textContent = `最低支持 ${minimum ?? '当前策略要求的版本'}；请升级后恢复新的远程工作。本机设置、日志、诊断和更新恢复仍可使用。`;
+  }
   $('update-notes').hidden = !updates?.available;
   if (updates?.available && activeView === 'updates') void loadReleaseNotes(updates.policy.stable);
   $('update-auto').checked = updates?.automatic !== false;
@@ -382,7 +398,11 @@ async function manualUpdateCheck() {
 $('update-check').addEventListener('click', () => void manualUpdateCheck());
 $('update-apply').addEventListener('click', () => current?.updates?.available &&
   void openUpdateModal(current.updates.policy.stable, current.version, $('update-apply')));
-$('update-later').addEventListener('click', closeUpdateModal);
+$('update-later').addEventListener('click', () => {
+  closeUpdateModal();
+  temporaryNotice('已稍后处理，可在“软件更新”中随时继续。');
+  if (current) render(current);
+});
 $('update-confirm').addEventListener('click', () => {
   if (!modalVersion) return;
   if ($('update-confirm').disabled) return;
