@@ -42,6 +42,19 @@ test('range rejection or truncation stops publication instead of silently readin
   }
 });
 
+test('metadata verification releases failed HTTP response bodies', async () => {
+  const f = fixture();
+  let cancelled = 0;
+  const fetcher = async (url, options) => {
+    if (url.endsWith('/catalog.json')) return new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+      status: 503,
+    });
+    return f.fetcher(url, options);
+  };
+  await assert.rejects(verifyRemote(origin, f.catalog, { fetcher }), /HTTP 503/);
+  assert.equal(cancelled, 1);
+});
+
 test('explicit full HTTPS verification still detects corruption outside the sampled ranges', async () => {
   const healthy = fixture();
   await verifyRemote(origin, healthy.catalog, { fetcher: healthy.fetcher, full: true });

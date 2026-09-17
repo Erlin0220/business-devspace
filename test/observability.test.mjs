@@ -38,6 +38,23 @@ test('provider failures expose numeric diagnostics without response messages or 
   assert.ok(!JSON.stringify(logs).includes('private'));
 });
 
+test('Cloudflare API discards unused 404 and redirect response bodies', async t => {
+  const cancelled = [];
+  t.mock.method(globalThis, 'fetch', async () => new Response(new ReadableStream({
+    cancel() { cancelled.push(true); },
+  }), { status: 404 }));
+  const cloud = new Cloudflare({ CF_API_TOKEN: 'private-token', CF_ACCOUNT_ID: 'a'.repeat(32),
+    CF_ZONE_ID: 'b'.repeat(32), DEVICE_DOMAIN: 'example.test' });
+  assert.equal(await cloud.api('/accounts/missing', { missingOk: true }), null);
+  assert.equal(cancelled.length, 1);
+
+  globalThis.fetch.mock.mockImplementation(async () => new Response(new ReadableStream({
+    cancel() { cancelled.push(true); },
+  }), { status: 302, headers: { Location: 'https://example.test/' } }));
+  await assert.rejects(cloud.api('/accounts/redirect'), error => error.code === 'cloudflare_redirect_rejected');
+  assert.equal(cancelled.length, 2);
+});
+
 test('observability retains unsampled diagnostic logs, not automatic invocation noise', async () => {
   const config = JSON.parse(await readFile('wrangler.jsonc', 'utf8'));
   assert.equal(config.observability.logs.enabled, true);
@@ -46,7 +63,7 @@ test('observability retains unsampled diagnostic logs, not automatic invocation 
   assert.equal(config.observability.redact_query_string, true);
   // Contract keeps the supported authenticated control surface Worker-first.
   // The retired legacy status path is blocked separately at the Cloudflare edge.
-  assert.deepEqual(config.assets.run_worker_first, ['/*', '!/mcp-app-assets/*']);
+  assert.deepEqual(config.assets.run_worker_first, ['/*', '!/mcp-app-assets/*', '!/robots.txt']);
   const headers = await readFile('assets/_headers', 'utf8');
   assert.match(headers, /Access-Control-Allow-Origin: \*/);
   assert.match(headers, /Cross-Origin-Resource-Policy: cross-origin/);

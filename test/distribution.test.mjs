@@ -144,6 +144,13 @@ test('release layout embeds core runtime components and keeps Git Bash as an off
     'App/build metadata changes must not change the unchanged runtime component');
 });
 
+test('Windows installer publishes complete standard version metadata', async () => {
+  const source = await readFile('platform/windows/installer.nsi', 'utf8');
+  assert.match(source, /VIAddVersionKey "ProductName" "Team DevSpace"/);
+  assert.match(source, /VIAddVersionKey "FileVersion" "\$\{APP_VERSION\}"/);
+  assert.match(source, /VIAddVersionKey "LegalCopyright" "Copyright \(c\) 2026 Erlin0220"/);
+});
+
 test('Unix profile prunes only optional Claude executables and foreign PTYs, preserving SDK and native build', async t => {
   const work = await mkdtemp(join(tmpdir(), 'tds-profile-'));
   t.after(() => rm(work, { recursive: true, force: true }));

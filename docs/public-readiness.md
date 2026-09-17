@@ -85,11 +85,13 @@ is archival evidence, not an active public CI chain.
 
 [Cutover Issue #1](https://github.com/Erlin0220/business-devspace/issues/1)
 records subsequent reviewed changes, final CI/runs and enforcement evidence.
-[Binary gate #2](https://github.com/Erlin0220/business-devspace/issues/2)
-remains independent until the final redistributed-byte inventory and notices are
-accepted. The previous PortableGit corresponding-source blocker is removed by
-the distribution boundary rather than by weakening its license obligations.
-Receipt-only artifacts do not authorize release.
+[Binary gate #2](https://github.com/Erlin0220/business-devspace/issues/2) is
+closed after the final redistributed-byte inventory/notices and exact accepted-byte
+publication path were verified. Public releases still require the current
+`public-release` workflow's per-release acceptance evidence; closing the original
+gate is not a blanket authorization to publish rebuilt or unaccepted bytes. The
+previous PortableGit corresponding-source blocker was removed by the distribution
+boundary rather than by weakening its license obligations.
 
 ## Primary references
 

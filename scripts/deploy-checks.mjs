@@ -12,17 +12,28 @@ export async function probeDeployment({ gateway, release, adminToken, asset, fet
     headers, redirect: 'error', signal: AbortSignal.timeout(10000),
   });
   const health = await get('/health');
-  if (!health.ok || !healthMatches(await health.json(), release)) throw new Error('readiness_release_mismatch');
+  if (!health.ok) {
+    await health.body?.cancel().catch(() => {});
+    throw new Error('readiness_release_mismatch');
+  }
+  if (!healthMatches(await health.json(), release)) throw new Error('readiness_release_mismatch');
   const admin = await get('/v1/admin/keys', { Authorization: `Bearer ${adminToken}` });
-  if (!admin.ok || !Array.isArray((await admin.json()).keys)) throw new Error('readiness_admin_or_d1_failed');
+  if (!admin.ok) {
+    await admin.body?.cancel().catch(() => {});
+    throw new Error('readiness_admin_or_d1_failed');
+  }
+  if (!Array.isArray((await admin.json()).keys)) throw new Error('readiness_admin_or_d1_failed');
   if (asset) {
     const response = await get(asset.path);
     if (!response.ok || response.headers.get('Access-Control-Allow-Origin') !== '*' ||
         response.headers.get('Cross-Origin-Resource-Policy') !== 'cross-origin' ||
         response.headers.get('X-Content-Type-Options') !== 'nosniff' ||
         !/immutable/.test(response.headers.get('Cache-Control') ?? '') ||
-        response.headers.has('X-Request-Id') ||
-        createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') !== asset.sha256) {
+        response.headers.has('X-Request-Id')) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error('readiness_assets_failed');
+    }
+    if (createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') !== asset.sha256) {
       throw new Error('readiness_assets_failed');
     }
   }

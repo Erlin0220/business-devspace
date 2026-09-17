@@ -36,8 +36,14 @@ export class Cloudflare {
       console.error(JSON.stringify({ event: 'cloudflare_api_failed', method, status: 0, reason: 'network' }));
       throw new CloudflareError(503);
     }
-    if (missingOk && response.status === 404) return null;
-    if (response.status >= 300 && response.status < 400) throw new CloudflareError(502, 'cloudflare_redirect_rejected');
+    if (missingOk && response.status === 404) {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => {});
+      throw new CloudflareError(502, 'cloudflare_redirect_rejected');
+    }
     let envelope;
     try { envelope = await response.json(); } catch {
       console.error(JSON.stringify({ event: 'cloudflare_api_failed', method, status: response.status, reason: 'invalid_response' }));

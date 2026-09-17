@@ -346,29 +346,39 @@ export async function reconcileMasterKeyRotation(env, dependencies = {}) {
   if (!env.MASTER_KEY_V2) return { enabled: false, scanned: 0, migrated: 0, alreadyCurrent: 0, failed: 0 };
   if (!env.MASTER_KEY) return { enabled: false, currentOnly: true, scanned: 0, migrated: 0, alreadyCurrent: 0, failed: 0 };
   const store = dependencies.store ?? new KeyStore(env.DB);
-  const rows = await store.encryptedDeviceSecrets();
+  const pageSize = 200;
+  let afterId = '';
+  let scanned = 0;
   let migrated = 0;
   let alreadyCurrent = 0;
   let failed = 0;
-  for (const row of rows) {
-    try {
-      let plain;
+  while (true) {
+    // Current-key rows remain in the table. Restarting every scan at LIMIT 200
+    // would permanently starve later legacy ciphertexts once page one is current.
+    const rows = await store.encryptedDeviceSecrets(pageSize, afterId);
+    scanned += rows.length;
+    for (const row of rows) {
       try {
-        plain = await unseal(row.device_secret_box, env.MASTER_KEY_V2, row.binding_id);
+        let plain;
+        try {
+          plain = await unseal(row.device_secret_box, env.MASTER_KEY_V2, row.binding_id);
+          if (!equalSecret(await sha256(plain), row.device_secret_hash)) throw new Error('credential hash mismatch');
+          alreadyCurrent++;
+          continue;
+        } catch {
+          plain = await unseal(row.device_secret_box, env.MASTER_KEY, row.binding_id);
+        }
         if (!equalSecret(await sha256(plain), row.device_secret_hash)) throw new Error('credential hash mismatch');
-        alreadyCurrent++;
-        continue;
+        const next = await seal(plain, env.MASTER_KEY_V2, row.binding_id);
+        if (await store.replaceDeviceSecretBox(row.id, row.binding_id, row.device_secret_box, next)) migrated++;
       } catch {
-        plain = await unseal(row.device_secret_box, env.MASTER_KEY, row.binding_id);
+        failed++;
       }
-      if (!equalSecret(await sha256(plain), row.device_secret_hash)) throw new Error('credential hash mismatch');
-      const next = await seal(plain, env.MASTER_KEY_V2, row.binding_id);
-      if (await store.replaceDeviceSecretBox(row.id, row.binding_id, row.device_secret_box, next)) migrated++;
-    } catch {
-      failed++;
     }
+    if (rows.length < pageSize) break;
+    afterId = rows.at(-1).id;
   }
-  const status = { enabled: true, scanned: rows.length, migrated, alreadyCurrent, failed };
+  const status = { enabled: true, scanned, migrated, alreadyCurrent, failed };
   if (migrated || failed) console.info(JSON.stringify({ event: 'master_key_rotation', ...status }));
   return status;
 }

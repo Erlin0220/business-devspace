@@ -4,11 +4,11 @@ import { run as runCommand, sha256File } from './build-utils.mjs';
 import { restoreDeployment, waitForReadiness } from './deploy-checks.mjs';
 import { resolve, join, sep } from 'node:path';
 import { parseArgs } from 'node:util';
-import { atomicJson, normalizeGateway, randomSecret, readJson, secureStateDirectory } from '../client/state.mjs';
+import { atomicJson, normalizeGateway, readJson, secureStateDirectory } from '../client/state.mjs';
 import { ensureAdminAccess, verifyAdminProtection } from './access.mjs';
 import { ensureGatewayWaf, verifyGatewayWaf } from './waf.mjs';
 import release, { requireProductionProfile } from './release-profile.mjs';
-import { deploymentConfig } from './private-config.mjs';
+import { deploymentConfig, validateDeploymentAdmin } from './private-config.mjs';
 
 const { values } = parseArgs({ options: { 'dry-run': { type: 'boolean' }, ci: { type: 'boolean' }, provision: { type: 'boolean' }, config: { type: 'string' } } });
 const directory = values.ci ? resolve(process.env.RUNNER_TEMP ?? 'build/deploy-ci') : resolve('.runtime');
@@ -32,7 +32,10 @@ async function api(path, method = 'GET', body, { missingOk = false, token = conf
     method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error', signal: AbortSignal.timeout(30000),
   });
-  if (missingOk && response.status === 404) return null;
+  if (missingOk && response.status === 404) {
+    await response.body?.cancel().catch(() => {});
+    return null;
+  }
   const value = await response.json();
   if (!response.ok || !value.success) throw new Error(`Cloudflare operation failed (${response.status}); check the scoped deployment token permissions.`);
   return value.result;
@@ -52,6 +55,12 @@ if (values['dry-run']) {
   }
   const gateway = normalizeGateway(config.gateway);
   if (new URL(gateway).protocol !== 'https:') throw new Error('A deployed gateway must use HTTPS');
+  const adminFile = values.ci ? null : join(directory, 'admin.json');
+  // Resolve existing canonical credentials before any remote mutation. A missing
+  // workstation file is not permission to replace the live D1 encryption root.
+  const admin = values.provision ? null : validateDeploymentAdmin(values.ci
+    ? { gateway, adminToken: process.env.ADMIN_TOKEN, masterKeyV2: process.env.MASTER_KEY_V2 }
+    : await readJson(adminFile, null), gateway);
   const hostname = new URL(gateway).hostname;
   if (gateway !== normalizeGateway(release.gateway)) throw new Error('Gateway differs from the explicitly selected installer release profile.');
   const zone = await api(`/zones/${config.zoneId}`);
@@ -124,12 +133,6 @@ if (values['dry-run']) {
   };
   const generatedFile = join(directory, 'wrangler.generated.json');
   await atomicJson(generatedFile, generated);
-  const adminFile = values.ci ? null : join(directory, 'admin.json');
-  let admin = values.ci ? { gateway, adminToken: process.env.ADMIN_TOKEN, masterKeyV2: process.env.MASTER_KEY_V2 }
-    : await readJson(adminFile, null);
-  if (admin && admin.gateway !== gateway) throw new Error('Existing administrator state belongs to a different gateway');
-  if (admin?.masterKey && !admin.masterKeyV2) admin.masterKeyV2 = admin.masterKey;
-  if (!admin) { admin = { gateway, adminToken: randomSecret(), masterKeyV2: randomSecret() }; await atomicJson(adminFile, admin); }
   if (![admin.adminToken, admin.masterKeyV2, config.runtimeToken].every(value => typeof value === 'string' && value.length >= 32)) {
     throw new Error('ADMIN_TOKEN, MASTER_KEY_V2 and CF_RUNTIME_API_TOKEN must come from the protected CI environment');
   }

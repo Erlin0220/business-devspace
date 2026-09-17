@@ -40,11 +40,11 @@ export class KeyStore {
     return rows.results;
   }
 
-  async encryptedDeviceSecrets(limit = 200) {
+  async encryptedDeviceSecrets(limit = 200, afterId = '') {
     const bounded = Math.min(Math.max(Number(limit) || 200, 1), 500);
     const rows = await this.db.prepare(`SELECT id, binding_id, device_secret_hash, device_secret_box
-      FROM access_keys WHERE binding_id IS NOT NULL AND device_secret_hash IS NOT NULL
-      AND device_secret_box IS NOT NULL ORDER BY id LIMIT ?`).bind(bounded).all();
+      FROM access_keys WHERE id > ? AND binding_id IS NOT NULL AND device_secret_hash IS NOT NULL
+      AND device_secret_box IS NOT NULL ORDER BY id LIMIT ?`).bind(afterId, bounded).all();
     return rows.results;
   }
 

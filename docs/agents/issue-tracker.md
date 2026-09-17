@@ -1,6 +1,9 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+GitHub Issues are the durable request and tracking surface for this repo. Use the `gh` CLI for all
+tracker operations. When a feature uses Spec Kit, repository-local design artifacts under
+`specs/<feature>/` are allowed and should link back to the relevant GitHub Issue; they do not replace
+the issue as the durable work item.
 
 ## Conventions
 

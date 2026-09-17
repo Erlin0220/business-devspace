@@ -94,7 +94,12 @@ export async function prepareHomepage(output, catalog, origin, { manualMigration
 }
 
 async function smallBody(response) {
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${new URL(response.url).pathname}`);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    let path = 'remote response';
+    try { if (response.url) path = new URL(response.url).pathname; } catch {}
+    throw new Error(`HTTP ${response.status} for ${path}`);
+  }
   const chunks = []; let size = 0;
   for await (const chunk of response.body) {
     size += chunk.length;
@@ -157,12 +162,18 @@ export async function verifyRemote(origin, catalog, { fetcher = request, full = 
 
 async function stableCheck(origin, catalog) {
   const response = await request(`${origin}/catalog.json`);
-  if (!/no-store/.test(response.headers.get('Cache-Control') ?? '')) throw new Error('Stable metadata must not be cached');
+  if (!/no-store/.test(response.headers.get('Cache-Control') ?? '')) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error('Stable metadata must not be cached');
+  }
   const text = await smallBody(response);
   if (text !== `${JSON.stringify(catalog, null, 2)}\n`) throw new Error('Stable activation could not be confirmed');
   for (const name of ['install.ps1', 'install.sh']) {
     const stable = await request(`${origin}/${name}`);
-    if (!/no-store/.test(stable.headers.get('Cache-Control') ?? '')) throw new Error('Stable entrypoint must not be cached');
+    if (!/no-store/.test(stable.headers.get('Cache-Control') ?? '')) {
+      await stable.body?.cancel().catch(() => {});
+      throw new Error('Stable entrypoint must not be cached');
+    }
     const pinned = await smallBody(await request(`${origin}/releases/${catalog.version}/${name}`));
     if (digest(await smallBody(stable)) !== digest(pinned)) throw new Error('Stable installer script does not match its release');
   }
@@ -185,11 +196,18 @@ async function publishHomepage({ origin, catalog, server, command, manualMigrati
     throw error;
   }
   const response = await request(`${origin}/`);
-  if (!/no-store/.test(response.headers.get('Cache-Control') ?? '')) throw new Error('Homepage must not be cached');
+  if (!/no-store/.test(response.headers.get('Cache-Control') ?? '')) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error('Homepage must not be cached');
+  }
   if (await smallBody(response) !== page) throw new Error('Published homepage differs from generated homepage');
   const localScript = await readFile(join(output, 'download-site.js'), 'utf8');
   const remoteScript = await request(`${origin}/download-site.js`);
-  if (!/no-store/.test(remoteScript.headers.get('Cache-Control') ?? '') || await smallBody(remoteScript) !== localScript) throw new Error('Published homepage script differs from staging');
+  if (!/no-store/.test(remoteScript.headers.get('Cache-Control') ?? '')) {
+    await remoteScript.body?.cancel().catch(() => {});
+    throw new Error('Published homepage script differs from staging');
+  }
+  if (await smallBody(remoteScript) !== localScript) throw new Error('Published homepage script differs from staging');
   const localLogo = join(output, 'devspace-logo-light.png');
   const remoteLogo = await request(`${origin}/devspace-logo-light.png`);
   const logoBytes = Buffer.from(await remoteLogo.arrayBuffer());
