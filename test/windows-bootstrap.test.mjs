@@ -129,6 +129,8 @@ test('Windows bootstrap parses in the 32-bit PowerShell 5 host used by NSIS', { 
 test('Windows Git prerequisite reuses matching Git Bash and otherwise acquires only the pinned official release', async () => {
   const script = await readFile('platform/windows/bootstrap.ps1', 'utf8');
   assert.ok(script.includes('function Test-NeedGitPrerequisite'));
+  assert.ok(script.includes("$env:ProgramW6432) { Join-Path $env:ProgramW6432 'Git'"),
+    '32-bit NSIS bootstrap must probe the native 64-bit Program Files directory before downloading Git');
   assert.ok(script.includes("Join-Path $directory 'git.exe'"));
   assert.ok(script.includes("'bin\\bash.exe'"));
   assert.ok(script.includes('function Install-GitPrerequisite'));
@@ -142,6 +144,36 @@ test('Windows Git prerequisite reuses matching Git Bash and otherwise acquires o
   assert.ok(script.includes('$activeRoot = if ($active)'));
   assert.doesNotMatch(script, /git-fallback/);
   assert.ok(!script.includes('return -not (Get-Command git.exe -ErrorAction SilentlyContinue)'));
+});
+
+test('Windows 32-bit bootstrap resolves a standard 64-bit Git install through ProgramW6432',
+  { skip: process.platform !== 'win32' }, () => {
+  const powershell = join(process.env.SystemRoot, 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const command = String.raw`
+$ErrorActionPreference='Stop'
+$ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'platform/windows/bootstrap.ps1'),[ref]$null,[ref]$null)
+foreach($name in @('Test-GitBashRoot','Find-GitBashRoot')){
+  $fn=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
+  if(-not $fn){throw 'Missing Git discovery helper'}
+  Invoke-Expression $fn.Extent.Text
+}
+$root=Join-Path $env:TEMP ('tds-programw6432-' + [Guid]::NewGuid().ToString('N'))
+try {
+  $git=Join-Path $root 'Git'
+  [void](New-Item -ItemType Directory -Force -Path (Join-Path $git 'cmd'),(Join-Path $git 'bin'))
+  [IO.File]::WriteAllText((Join-Path $git 'cmd\git.exe'),'fixture')
+  [IO.File]::WriteAllText((Join-Path $git 'bin\bash.exe'),'fixture')
+  $env:ProgramW6432=$root
+  $env:ProgramFiles=Join-Path $root 'x86-only'
+  $env:PATH=''
+  $actual=Find-GitBashRoot $null $null
+  if([IO.Path]::GetFullPath($actual) -ne [IO.Path]::GetFullPath($git)){throw 'ProgramW6432 Git was not selected'}
+} finally {
+  Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+}
+`;
+  execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+    { cwd: process.cwd(), windowsHide: true, stdio: 'pipe' });
 });
 
 test('Windows candidate rollback attempts all owned cleanup and retains a candidate if any cleanup remains uncertain',

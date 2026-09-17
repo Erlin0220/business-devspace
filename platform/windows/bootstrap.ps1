@@ -251,6 +251,10 @@ function Test-GitBashRoot([string]$Root) {
 
 function Find-GitBashRoot([object]$Git, [string]$CandidateRoot) {
   foreach ($root in @(
+    # NSIS launches a 32-bit Windows PowerShell host. Under WOW64, ProgramFiles
+    # points at Program Files (x86); ProgramW6432 is the native 64-bit Program
+    # Files location and is where a normal 64-bit Git for Windows install lives.
+    $(if ($env:ProgramW6432) { Join-Path $env:ProgramW6432 'Git' }),
     $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'Git' }),
     $(if ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) { Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Git' })
   )) {
